@@ -63,4 +63,16 @@ add_executable(${PROJECT_NAME}_node src/nodes/launch_node.cpp)
 
  
 
-
+## Declare a C++ executable
+# Declare a C++ executable
+add_executable(${PROJECT_NAME}
+        src/SwarmCommander.cpp
+        src/SwarmCommander_utils.cpp
+        src/LineSegment.cpp
+        src/Path.cpp
+        src/cost_functions.hpp)
+add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
+target_link_libraries(${PROJECT_NAME}
+        ${catkin_LIBRARIES}
+        ${CERES_LIBRARIES}
+        )
