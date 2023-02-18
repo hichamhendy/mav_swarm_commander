@@ -56,7 +56,7 @@ class SwarmCommander
         ros::Publisher final_path_pub_;
         ros::Publisher sampled_path_pub_;
         ros::Publisher path_setpoint_pub_;
-        ros::ServiceClient topological_planning_service_client_;
+        ros::ServiceClient topological_planning_service_client_; // the client is temporary till I integrate the planner
 
         // Visualization Parameters
         std_msgs::ColorRGBA color_initial_path_;
