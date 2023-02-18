@@ -17,7 +17,7 @@
 
 #include <GeographicLib/LocalCartesian.hpp>
 
-#include "Path.h"
+#include "mav_swarm_commander/Path.h"
 
 typedef actionlib::SimpleActionServer<manager_msgs::FlyToAction> FlyToServer; // https://docs.ros.org/en/diamondback/api/actionlib/html/classactionlib_1_1SimpleActionServer.html
 
