@@ -24,13 +24,12 @@ typedef actionlib::SimpleActionServer<manager_msgs::FlyToAction> FlyToServer; //
 class SwarmCommander
 {
     public:
-        SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_private, const ros::NodeHandle& nh_waypoint_planning);
+        SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv, const ros::NodeHandle& nh_waypoint_planning);
 
     private:
         ros::NodeHandle nh_;
-        ros::NodeHandle nh_private_;
-        ros::NodeHandle nh_waypoint_planning_; 
-        ros::NodeHandle nh_mav_interface_;
+        ros::NodeHandle nh_private_; // at the mean time it is made to take care of internal matters
+        ros::NodeHandle nh_waypoint_planning_;  // to communicate the results
 
         // The timer triggering the main planning loop
         ros::Timer planning_timer_;
