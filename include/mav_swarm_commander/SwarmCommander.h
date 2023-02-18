@@ -29,10 +29,11 @@ class SwarmCommander
     private:
         ros::NodeHandle nh_;
         ros::NodeHandle nh_private_; // at the mean time it is made to take care of internal matters
-        ros::NodeHandle nh_waypoint_planning_;  // to communicate the results
+        ros::NodeHandle nh_waypoint_planning_;      // to handle the waypoint planner 
+        ros::NodeHandle nh_trajectory_planning_; // to communicate the results
 
-        // The timer triggering the main planning loop
-        ros::Timer planning_timer_;
+        // The timer triggering the main trajectory planning loop
+        ros::Timer trajectory_planning_timer_;
 
         // Current state
         Eigen::Vector3d current_copter_position_;
@@ -107,7 +108,7 @@ class SwarmCommander
          * 9- Check if we have reached the end of the current safe path
          * 10- Visualize the optimized path use kinda of publishSafePath()
         */
-        void waypointPlanningCallback();
+        void trajectoryPlanningCallback();
 
         /**
          * TODO
