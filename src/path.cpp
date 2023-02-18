@@ -54,25 +54,6 @@ void Path::addPoint(const Eigen::Vector3d& p)
   points_.push_back(p); 
 }
 
-std::vector<Eigen::Vector3d> Path::sampledPoints(const double desired_step_length) const
-{
-  if (points_.size() < 2)
-  {
-    return {};
-  }
-
-  std::vector<Eigen::Vector3d> result;
-
-  for (std::size_t i = 0; i < points_.size() - 1; i++)
-  {
-    auto segment_points = sampleSegment(points_[i], points_[i + 1], desired_step_length);
-    // TODO: Remove duplicated points!?
-
-    result.insert(result.end(), segment_points.begin(), segment_points.end());
-  }
-
-  return result;
-}
 
 visualization_msgs::MarkerArray Path::visualizationMarkerMsg(const std_msgs::ColorRGBA& color, const double scale) const
 {
