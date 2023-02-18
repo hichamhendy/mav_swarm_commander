@@ -49,7 +49,10 @@ void Path::setFromMsg(const manager_msgs::OffboardPathSetpoint& msg)
   }
 }
 
-void Path::addPoint(const Eigen::Vector3d& p) { points_.push_back(p); }
+void Path::addPoint(const Eigen::Vector3d& p) 
+{ 
+  points_.push_back(p); 
+}
 
 std::vector<Eigen::Vector3d> Path::sampledPoints(const double desired_step_length) const
 {
