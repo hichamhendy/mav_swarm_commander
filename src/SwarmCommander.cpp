@@ -1,4 +1,4 @@
-#include "SwarmCommander.h"
+#include "mav_swarm_commander/SwarmCommander.h"
 
 SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv,
                                const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_trajectory_planning):
