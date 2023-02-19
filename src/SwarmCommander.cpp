@@ -103,3 +103,20 @@ void SwarmCommander::finishCurrentGoal()
     initial_path_pub_.publish(Path().visualizationMarkerMsg(color_initial_path_));
     final_path_pub_.publish(Path().visualizationMarkerMsg(color_final_path_));
 }
+
+void SwarmCommander::abortCurrentGoal()
+{
+    manager_msgs::FlyToResult result;
+    result.success = false;
+    result.dist_to_destination = (current_copter_position_ - destination_point_).norm();
+
+    flyto_server_.setAborted(result);
+
+    // clear relevant place holders
+    initial_path_.points_.clear();
+    current_path_.points_.clear();
+    current_safe_path_.points_.clear();
+
+    initial_path_pub_.publish(Path().visualizationMarkerMsg(color_initial_path_));
+    final_path_pub_.publish(Path().visualizationMarkerMsg(color_final_path_));
+}
