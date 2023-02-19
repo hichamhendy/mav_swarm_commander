@@ -46,6 +46,20 @@ class SwarmCommander
          * new goals preempt previous goals based on the stamp in their GoalID field.
          * More infor to be found under:
          *  https://docs.ros.org/en/diamondback/api/actionlib/html/classactionlib_1_1SimpleActionServer.html#a4964ef9e28f5620e87909c41f0458ecb
+         * Proposed action format:
+         * # Define the goal
+            string frame_id
+            geometry_msgs/Point destination
+            float64 desired_yaw
+            bool relative_heading
+            ---
+            # Define the result
+            bool success
+            float32 dist_to_destination #Meter
+            ---
+            # Define a feedback message
+            float32 percentage_of_completion
+
         */
         FlyToServer flyto_server_;
 
@@ -84,7 +98,8 @@ class SwarmCommander
         /**
          * The function uses a server 
          * https://docs.ros.org/en/diamondback/api/actionlib/html/classactionlib_1_1SimpleActionServer.html#a4964ef9e28f5620e87909c41f0458ecb
-         * The callback assigns the goal and Start planning and flying immediately
+         * The callback assigns the goal and Start planning and flying immediately.
+         * acceptNewGoal() @return s boost::shared_ptr< const typename SimpleActionServer< ActionSpec >::Goal > -> boost::shared_ptr<const manager_msgs::FlyToGoal>
         */
         void goalCallback();
 
