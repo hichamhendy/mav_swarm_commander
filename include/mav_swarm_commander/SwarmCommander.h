@@ -25,6 +25,16 @@ class SwarmCommander
 {
     public:
         SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv, const ros::NodeHandle& nh_waypoint_planning);
+        
+        /**
+         * Copy operator for such a class shouldn't happen
+        */
+        SwarmCommander(const SwarmCommander&) = delete;
+
+        /**
+         * Move operator for such a class shouldn't happen
+        */
+        SwarmCommander& operator=(SwarmCommander&) = delete;
 
     private:
         ros::NodeHandle nh_;
