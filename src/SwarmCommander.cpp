@@ -56,7 +56,7 @@ bool SwarmCommander::updateCopterPosition()
     }
 }
 
-SwarmCommander::goalCallback()
+void SwarmCommander::goalCallback()
 {
     current_goal_ = flyto_server_.acceptNewGoal();
     destination_point_ = Eigen::Vector3d(current_goal_->desination.x, current_goal_->desination.y, current_goal_->desination.z);
@@ -70,7 +70,7 @@ SwarmCommander::goalCallback()
     trajectoryPlanningCallback(); // initate the trajectory builder based on the received goal
 }
 
-SwarmCommander::preemptCallback()
+void SwarmCommander::preemptCallback()
 {
     flyto_server_.setPreempted(); // preempting
 
@@ -86,3 +86,4 @@ SwarmCommander::preemptCallback()
     }
     // another idea code be reached by acuring 
 }
+
