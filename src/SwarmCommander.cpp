@@ -35,6 +35,10 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
     dynamic_reconfigure_server_.setCallback(boost::bind(&SwarmCommander::reconfigure, this, _1, _2));
 
     trajectory_planning_timer_ = nh_trajectory_planning_.createTimer(ros::Duration(1.0), boost::bind(&FlightCommander::trajectoryPlanningCallback, this));
+
+    ROS_INFO_STREAM("==================================================================================");
+    ROS_INFO_STREAM("SwarmCommander has been successfully contructed");
+    ROS_INFO_STREAM("==================================================================================");
 }
 
 bool SwarmCommander::updateCopterPosition()
@@ -119,4 +123,10 @@ void SwarmCommander::abortCurrentGoal()
 
     initial_path_pub_.publish(Path().visualizationMarkerMsg(color_initial_path_));
     final_path_pub_.publish(Path().visualizationMarkerMsg(color_final_path_));
+}
+
+
+void SwarmCommander::trajectoryPlanningCallback()
+{
+
 }
