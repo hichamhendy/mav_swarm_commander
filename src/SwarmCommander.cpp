@@ -36,3 +36,17 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
 
     trajectory_planning_timer_ = nh_trajectory_planning_.createTimer(ros::Duration(1.0), boost::bind(&FlightCommander::trajectoryPlanningCallback, this));
 }
+
+SwarmCommander::goalCallback()
+{
+    current_goal_ = flyto_server_.acceptNewGoal();
+    destination_point_ = Eigen::Vector3d(current_goal_->desination.x, current_goal_->desination.y, current_goal_->desination.z);
+    destination_frame_id_ = current_goal_->frame_id;
+
+    // clear relevanr place holders
+    initial_path_.points_.clear();
+    current_path_.points_.clear();
+    current_safe_path_.points_.clear();
+
+    trajectoryPlanningCallback(); // initate the trajectory builder based on the received goal
+}
