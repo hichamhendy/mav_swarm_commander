@@ -62,10 +62,27 @@ SwarmCommander::goalCallback()
     destination_point_ = Eigen::Vector3d(current_goal_->desination.x, current_goal_->desination.y, current_goal_->desination.z);
     destination_frame_id_ = current_goal_->frame_id;
 
-    // clear relevanr place holders
+    // clear relevant place holders
     initial_path_.points_.clear();
     current_path_.points_.clear();
     current_safe_path_.points_.clear();
 
     trajectoryPlanningCallback(); // initate the trajectory builder based on the received goal
+}
+
+SwarmCommander::preemptCallback()
+{
+    flyto_server_.setPreempted(); // preempting
+
+    // clear relevant place holders
+    initial_path_.points_.clear();
+    current_path_.points_.clear();
+    current_safe_path_.points_.clear();#
+
+    if (updateCopterPosition())
+    {
+        // TODO: insert the current position in safe path
+        // safe_path.addPoint(current_copter_position_);
+    }
+    // another idea code be reached by acuring 
 }
