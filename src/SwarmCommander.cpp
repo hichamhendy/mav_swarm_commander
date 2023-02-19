@@ -37,6 +37,25 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
     trajectory_planning_timer_ = nh_trajectory_planning_.createTimer(ros::Duration(1.0), boost::bind(&FlightCommander::trajectoryPlanningCallback, this));
 }
 
+bool SwarmCommander::updateCopterPosition()
+{
+    try
+    {
+        const geometry_msgs::TransformStamped transform_stamped = tf_buffer_.lookupTransform("odom", "base_link", ros::Time(0));
+        current_copter_position_ = {transform_stamped.transform.translation.x, transform_stamped.transform.translation.y,
+                                    transform_stamped.transform.translation.z};
+        current_copter_orientation_ = {transform_stamped.transform.rotation.w, transform_stamped.transform.rotation.x,
+                                    transform_stamped.transform.rotation.y, transform_stamped.transform.rotation.z};
+
+        return true;
+    }
+    catch (tf2::TransformException& ex)
+    {
+        ROS_ERROR_STREAM("Could not get the tf transform odom -> base_link");
+        return false;
+    }
+}
+
 SwarmCommander::goalCallback()
 {
     current_goal_ = flyto_server_.acceptNewGoal();
