@@ -77,7 +77,7 @@ void SwarmCommander::preemptCallback()
     // clear relevant place holders
     initial_path_.points_.clear();
     current_path_.points_.clear();
-    current_safe_path_.points_.clear();#
+    current_safe_path_.points_.clear();
 
     if (updateCopterPosition())
     {
@@ -87,3 +87,19 @@ void SwarmCommander::preemptCallback()
     // another idea code be reached by acuring 
 }
 
+void SwarmCommander::finishCurrentGoal()
+{
+    manager_msgs::FlyResult result;
+    result.success = true;
+    result.dist_to_destination =  (current_copter_position_ - destination_point_).norm();
+
+    flyto_server_.setSucceeded(result); // send result als suceeded over the erver to set the status of the active goal.
+
+    // clear relevant place holders
+    initial_path_.points_.clear();
+    current_path_.points_.clear();
+    current_safe_path_.points_.clear();
+
+    initial_path_pub_.publish(Path().visualizationMarkerMsg(color_initial_path_));
+    final_path_pub_.publish(Path().visualizationMarkerMsg(color_final_path_));
+}
