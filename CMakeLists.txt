@@ -13,9 +13,9 @@ find_package(
         actionlib_msgs
         dynamic_reconfigure
         mavros_msgs
-        voxblox_ros
         libmavconn
         backward_ros
+        manager_msgs
         )
 
 ## System dependencies are found with CMake's conventions
@@ -24,10 +24,10 @@ find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 
 
-generate_dynamic_reconfigure_options(
-        cfg/mav_commander.cfg
-        cfg/offboard_ctl.cfg
-)
+#generate_dynamic_reconfigure_options(
+#        cfg/mav_commander.cfg
+#        cfg/offboard_ctl.cfg
+#)
 
 catkin_package(
         INCLUDE_DIRS include
@@ -43,7 +43,7 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-        # include
+        include
         ${catkin_INCLUDE_DIRS}
         ${CERES_INCLUDE_DIRS}
 )
@@ -59,7 +59,7 @@ include_directories(
 # add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
 
-add_executable(${PROJECT_NAME}_node src/nodes/launch_node.cpp)
+# add_executable(${PROJECT_NAME}_node src/nodes/launch_node.cpp)
 
  
 
@@ -67,11 +67,11 @@ add_executable(${PROJECT_NAME}_node src/nodes/launch_node.cpp)
 # Declare a C++ executable
 add_executable(${PROJECT_NAME}
         src/SwarmCommander.cpp
-        src/SwarmCommander_utils.cpp
-        src/LineSegment.cpp
-        src/Path.cpp
-        src/cost_functions.hpp)
-add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
+        src/line_segment.cpp
+        src/path.cpp
+        # src/cost_functions.hpp
+        )
+# add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
 target_link_libraries(${PROJECT_NAME}
         ${catkin_LIBRARIES}
         ${CERES_LIBRARIES}

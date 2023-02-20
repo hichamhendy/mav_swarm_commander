@@ -1,4 +1,4 @@
-#include "mav_swarm_commander/LineSegment.h"
+#include "mav_swarm_commander/line_segment.h"
 
 LineSegment::LineSegment(const Eigen::Vector3d& start, const Eigen::Vector3d& end)
     : start_(start), end_(end), line_(Eigen::ParametrizedLine<double, 3>::Through(start, end))
