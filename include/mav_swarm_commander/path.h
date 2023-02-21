@@ -9,7 +9,7 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
-#include "mav_swarm_commander/LineSegment.h"
+#include "mav_swarm_commander/line_segment.h"
 
 struct Path;
 

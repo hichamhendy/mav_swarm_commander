@@ -5,7 +5,7 @@
 #include <manager_msgs/FlyToAction.h>
 #include <manager_msgs/OffboardPathSetpoint.h>
 #include <dynamic_reconfigure/server.h>
-#include <flight_commander/FlightCommanderConfig.h>
+#include <mav_swarm_commander/SwarmCommanderConfig.h>
 #include <mavros_msgs/HomePosition.h>
 #include <ros/ros.h>
 #include <tf2_ros/transform_listener.h>
@@ -17,14 +17,16 @@
 
 #include <GeographicLib/LocalCartesian.hpp>
 
-#include "mav_swarm_commander/Path.h"
+#include "mav_swarm_commander/path.h"
+
+#include <future> // to name the type of the mutex used
 
 typedef actionlib::SimpleActionServer<manager_msgs::FlyToAction> FlyToServer; // https://docs.ros.org/en/diamondback/api/actionlib/html/classactionlib_1_1SimpleActionServer.html
 
 class SwarmCommander
 {
     public:
-        SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv, const ros::NodeHandle& nh_waypoint_planning);
+        SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv, const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_trajectory_planning_);
         
         /**
          * Copy operator for such a class shouldn't happen
@@ -32,7 +34,7 @@ class SwarmCommander
         SwarmCommander(const SwarmCommander&) = delete;
 
         /**
-         * Move operator for such a class shouldn't happen
+         * Copy assignment for such a class shouldn't happen
         */
         SwarmCommander& operator=(SwarmCommander&) = delete;
 
@@ -89,9 +91,9 @@ class SwarmCommander
         std_msgs::ColorRGBA color_final_path_;
 
         // Reconfigure
-        dynamic_reconfigure::Server<flight_commander::SwarmCommanderConfig> dynamic_reconfigure_server_;
-        void reconfigure(swarm_commander::SwarmCommanderConfig& config, uint32_t level);
-        swarm_commander::SwarmCommanderConfig config_;
+        dynamic_reconfigure::Server<mav_swarm_commander::SwarmCommanderConfig> dynamic_reconfigure_server_;
+        void reconfigure(mav_swarm_commander::SwarmCommanderConfig& config, uint32_t level);
+        mav_swarm_commander::SwarmCommanderConfig config_;
 
         // Planning
         boost::shared_ptr<const manager_msgs::FlyToGoal> current_goal_;
@@ -106,7 +108,7 @@ class SwarmCommander
         ros::Timer publish_position_setpoint_timer_; // Setpoint
 
         /**
-         * The function uses a server 
+         * @brief The function uses a server 
          * https://docs.ros.org/en/diamondback/api/actionlib/html/classactionlib_1_1SimpleActionServer.html#a4964ef9e28f5620e87909c41f0458ecb
          * The callback assigns the goal and Start planning and flying immediately.
          * acceptNewGoal() @return s boost::shared_ptr< const typename SimpleActionServer< ActionSpec >::Goal > -> boost::shared_ptr<const manager_msgs::FlyToGoal>
@@ -120,7 +122,7 @@ class SwarmCommander
         void preemptCallback();
 
         /**
-         * The callback is reposnsible for Ceres initiation
+         * @brief The callback is reposnsible for Ceres initiation
          * Steps:
          * 1- Try to get the current copter position
          * 2- Do nothing, if we do not have any Goal at the moment
@@ -141,24 +143,24 @@ class SwarmCommander
         void publishSafePath();
 
         /**
-         * Updates the copter current position
+         * @brief Updates the copter current position
         */
         bool updateCopterPosition();
 
         /**
-         * The function gets called from way point planner 
+         * @brief The function gets called from way point planner 
         */
         Path optimizePath(const Path& initial_path, ceres::Solver::Summary* summary);
 
         /**
-         * This function is meant for the far future.
+         * @brief This function is meant for the far future.
          * I will be integrating my path planner node here. What will happen till then is to pass a list of points given somehow
          * @return path
         */
         Path planGlobalPath(const Eigen::Vector3d& destination_point);
 
         /**
-         * The functions gives a runaway in case the planner failed or becmes unreasoable
+         * @brief The functions gives a runaway in case the planner failed or becmes unreasoable
          * Steps:
          * 1- Add the first input point as a "safe point"; usually this point is the current copter position anyway, so its always "safe"
          * 2- Extend a line and check by every line segment if the point comes near to an obstacle or not
@@ -167,7 +169,7 @@ class SwarmCommander
         Path getSafePath(const Path& path);
         
         /**
-         * Sets the status of the active goal to succeeded.
+         * @brief Sets the status of the active goal to succeeded.
         */
         void finishCurrentGoal();
 

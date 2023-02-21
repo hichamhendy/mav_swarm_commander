@@ -16,6 +16,7 @@ find_package(
         libmavconn
         backward_ros
         manager_msgs
+        tf2_ros
         )
 
 ## System dependencies are found with CMake's conventions
@@ -24,10 +25,9 @@ find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 
 
-#generate_dynamic_reconfigure_options(
-#        cfg/mav_commander.cfg
-#        cfg/offboard_ctl.cfg
-#)
+generate_dynamic_reconfigure_options(
+        cfg/swarm_commander.cfg
+)
 
 catkin_package(
         INCLUDE_DIRS include
@@ -48,10 +48,26 @@ include_directories(
         ${CERES_INCLUDE_DIRS}
 )
 
-## Declare a C++ library
-# add_library(${PROJECT_NAME}
-#   src/${PROJECT_NAME}/flight_commander.cpp
-# )
+#is used to supply a list of libraries (object archives) to the linker. 
+link_libraries(
+        ${catkin_LIBRARIES}
+        ${CERES_LIBRARIES}
+  )
+
+## Declare a C++ library  is similar to add_executable, except it adds a target for a library
+add_library(${PROJECT_NAME}
+        src/SwarmCommander.cpp
+        src/line_segment.cpp
+        src/path.cpp
+)
+
+
+#target_link_libraries( ${PROJECT_NAME}
+#        ${catkin_LIBRARIES}
+#        ${INCLUDE_FILES}
+#        ${PROJECT_NAME} # important to find include libraries
+#        ${CERES_LIBRARIES}
+#)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
@@ -65,14 +81,14 @@ include_directories(
 
 ## Declare a C++ executable
 # Declare a C++ executable
-add_executable(${PROJECT_NAME}
-        src/SwarmCommander.cpp
-        src/line_segment.cpp
-        src/path.cpp
-        # src/cost_functions.hpp
-        )
-# add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
-target_link_libraries(${PROJECT_NAME}
-        ${catkin_LIBRARIES}
-        ${CERES_LIBRARIES}
-        )
+#add_executable(${PROJECT_NAME}
+#        src/SwarmCommander.cpp
+#        src/line_segment.cpp
+#        src/path.cpp
+#        # src/cost_functions.hpp
+#        )
+#add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
+#target_link_libraries(${PROJECT_NAME}
+#        ${catkin_LIBRARIES}
+#        ${CERES_LIBRARIES}
+#        )

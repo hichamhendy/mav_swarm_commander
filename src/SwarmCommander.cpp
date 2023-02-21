@@ -9,9 +9,7 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
     initial_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("initial_path", 1);
     current_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("current_path", 1);
     final_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("final_path", 1);
-    path_setpoint_pub_ = nh_trajectory_planning_.advertise<drakula_msgs::OffboardPathSetpoint>("path_setpoint", 1);
-
-    topological_planning_service_client_ = nh_trajectory_planning_.serviceClient<drakula_msgs::PlanWaypoints>("/plan_waypoints");
+    path_setpoint_pub_ = nh_trajectory_planning_.advertise<manager_msgs::OffboardPathSetpoint>("path_setpoint", 1);
 
     color_initial_path_.r = 1.0;
     color_initial_path_.g = 0.5;
@@ -28,13 +26,13 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
     color_final_path_.b = 0.1;
     color_final_path_.a = 1.0;
 
-    flyto_server_.registerGoalCallback(boost::bind(&FlightCommander::goalCallback, this));
-    flyto_server_.registerPreemptCallback(boost::bind(&FlightCommander::preemptCallback, this));
+    flyto_server_.registerGoalCallback(boost::bind(&SwarmCommander::goalCallback, this));
+    flyto_server_.registerPreemptCallback(boost::bind(&SwarmCommander::preemptCallback, this));
     flyto_server_.start();
 
     dynamic_reconfigure_server_.setCallback(boost::bind(&SwarmCommander::reconfigure, this, _1, _2));
 
-    trajectory_planning_timer_ = nh_trajectory_planning_.createTimer(ros::Duration(1.0), boost::bind(&FlightCommander::trajectoryPlanningCallback, this));
+    trajectory_planning_timer_ = nh_trajectory_planning_.createTimer(ros::Duration(1.0), boost::bind(&SwarmCommander::trajectoryPlanningCallback, this));
 
     ROS_INFO_STREAM("==================================================================================");
     ROS_INFO_STREAM("SwarmCommander has been successfully contructed");
@@ -63,7 +61,7 @@ bool SwarmCommander::updateCopterPosition()
 void SwarmCommander::goalCallback()
 {
     current_goal_ = flyto_server_.acceptNewGoal();
-    destination_point_ = Eigen::Vector3d(current_goal_->desination.x, current_goal_->desination.y, current_goal_->desination.z);
+    destination_point_ = Eigen::Vector3d(current_goal_->destination.x, current_goal_->destination.y, current_goal_->destination.z);
     destination_frame_id_ = current_goal_->frame_id;
 
     // clear relevant place holders
@@ -93,7 +91,7 @@ void SwarmCommander::preemptCallback()
 
 void SwarmCommander::finishCurrentGoal()
 {
-    manager_msgs::FlyResult result;
+    manager_msgs::FlyToResult result;
     result.success = true;
     result.dist_to_destination =  (current_copter_position_ - destination_point_).norm();
 
@@ -129,4 +127,9 @@ void SwarmCommander::abortCurrentGoal()
 void SwarmCommander::trajectoryPlanningCallback()
 {
 
+}
+
+void SwarmCommander::reconfigure(mav_swarm_commander::SwarmCommanderConfig& config, uint32_t level)
+{
+	config_ = config;
 }
