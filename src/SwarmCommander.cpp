@@ -6,10 +6,7 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
                                nh_trajectory_planning_(nh_trajectory_planning), flyto_server_(nh_trajectory_planning_, "flyto_action", false)
 
 {
-    initial_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("initial_path", 1);
-    current_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("current_path", 1);
-    final_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("final_path", 1);
-    path_setpoint_pub_ = nh_trajectory_planning_.advertise<manager_msgs::OffboardPathSetpoint>("path_setpoint", 1);
+    offboard_mode_position_setpoint_marker_pub_ = nh_trajectory_planning_.advertise<geometry_msgs::PoseStamped>("/offboard_position_setpoint", 1);
 
     color_initial_path_.r = 1.0;
     color_initial_path_.g = 0.5;
