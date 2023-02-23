@@ -49,6 +49,12 @@ bool SwarmCommander::updateCopterPosition()
         current_copter_orientation_ = {transform_stamped.transform.rotation.w, transform_stamped.transform.rotation.x,
                                     transform_stamped.transform.rotation.y, transform_stamped.transform.rotation.z};
 
+    if (!loiter_position_ || !loiter_orientation_)
+    {
+        loiter_position_ = current_copter_position_;
+        loiter_orientation_ = current_copter_orientation_;
+    }
+
         return true;
     }
     catch (tf2::TransformException& ex)

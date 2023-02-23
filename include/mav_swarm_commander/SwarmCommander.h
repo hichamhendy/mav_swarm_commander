@@ -103,6 +103,12 @@ class SwarmCommander
         Path current_path_;
         Path current_safe_path_;
         mutable std::mutex current_safe_path_mutex_;
+        std::string px4_flight_mode_;
+        boost::optional<Eigen::Vector3d> loiter_position_;
+        boost::optional<Eigen::Quaterniond> loiter_orientation_;
+        boost::optional<drakula_msgs::OffboardPathSetpoint> path_setpoint_msg_;
+        Path current_path_setpoint_;
+
 
         
         ros::Timer publish_position_setpoint_timer_; // Setpoint
