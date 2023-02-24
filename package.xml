@@ -20,5 +20,6 @@
   <depend>mavros_msgs</depend>
   <depend>backward_ros</depend>
   <depend>manager_msgs</depend>
+  <depend>esdf_map</depend>
 
 </package>

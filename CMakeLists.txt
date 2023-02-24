@@ -17,6 +17,7 @@ find_package(
         backward_ros
         manager_msgs
         tf2_ros
+        esdf_map
         )
 
 ## System dependencies are found with CMake's conventions
