@@ -1,7 +1,5 @@
 #pragma once
 
-#define __PACKAGE_NAME__ "Swarmming"
-
 #include <actionlib/server/simple_action_server.h>
 
 #include <manager_msgs/FlyToAction.h>
@@ -24,16 +22,17 @@
 #include "mav_swarm_commander/path.h"
 #include "mav_swarm_commander/cost_functionals.h"
 #include "esdf_map/signed_distance_field.h"
-
+#include <mav_commander/mav_commander.h>
 
 #include <future> // to name the type of the mutex used
 
 typedef actionlib::SimpleActionServer<manager_msgs::FlyToAction> FlyToServer; // https://docs.ros.org/en/diamondback/api/actionlib/html/classactionlib_1_1SimpleActionServer.html
 
+
 class SwarmCommander
 {
     public:
-        SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv, const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_trajectory_planning, const ros::NodeHandle& nh_esdf_map);
+        SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv,const ros::NodeHandle& nh_interface,const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_trajectory_planning, const ros::NodeHandle& nh_esdf_map);
         
         /**
          * Copy operator for such a class shouldn't happen
@@ -48,11 +47,14 @@ class SwarmCommander
     private:
         ros::NodeHandle nh_;
         ros::NodeHandle nh_private_; // at the mean time it is made to take care of internal matters
+        ros::NodeHandle nh_interface_;
         ros::NodeHandle nh_waypoint_planning_;      // to handle the waypoint planner 
         ros::NodeHandle nh_trajectory_planning_; // to communicate the results
         ros::NodeHandle nh_esdf_map_;
+        
 
         VoxelGridMap::Ptr sdf_map_;
+        nut::MavCommander::Ptr mav_interface;
 
         // The timer triggering the main trajectory planning loop
         ros::Timer trajectory_planning_timer_;

@@ -1,15 +1,17 @@
 #include "mav_swarm_commander/SwarmCommander.h"
 
-SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv,
+SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv,const ros::NodeHandle& nh_interface,
                                const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_trajectory_planning,
                                const ros::NodeHandle& nh_esdf_map):
-                               nh_(nh), nh_private_(nh_priv), nh_waypoint_planning_(nh_waypoint_planning), 
+                               nh_(nh), nh_private_(nh_priv), nh_interface_(nh_interface), nh_waypoint_planning_(nh_waypoint_planning), 
                                nh_trajectory_planning_(nh_trajectory_planning), nh_esdf_map_(nh_esdf_map),
                                flyto_server_(nh_trajectory_planning_, "flyto_action", false)
 
 {
     sdf_map_.reset(new VoxelGridMap);
     sdf_map_->initMap(nh_esdf_map);
+
+    mav_interface.reset(new nut::MavCommander(nh_interface_, true, false, true));
 
     initial_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("/initial_path", 1);
     current_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("/current_path", 1);
@@ -157,6 +159,12 @@ void SwarmCommander::globalPlanner()
     }
 
     current_path_pub_.publish(current_path_.visualizationMarkerMsg(color_current_path_));
+
+    ros::Rate setpoint_loop_rate(10);
+    for(std::size_t pt = 0; pt < current_path_.points_.size() - 1; pt++)
+    {   
+
+    }
 }
 
 
@@ -177,11 +185,11 @@ Path SwarmCommander::trajectoryPlanning(const Path& initial_path, ceres::Solver:
         std::size_t num_steps = std::round(vector_mag/step_length);
 
         // Distance to obstacles residuals
-        auto cost_functor = new DistanceToObstacleFunctor( *sdf_map_, num_steps, config_.min_obstacle_distance + config_.additional_min_obstacle_distance,
-        config_.min_obstacle_distance, config_.soft_obstacle_distance_weight, config_.hard_obstacle_distance_weight);
+        // auto cost_functor = new DistanceToObstacleFunctor( *sdf_map_, num_steps, config_.min_obstacle_distance + config_.additional_min_obstacle_distance,
+        // config_.min_obstacle_distance, config_.soft_obstacle_distance_weight, config_.hard_obstacle_distance_weight);
 
-        problem.AddResidualBlock(new DistanceToObstacleFunctor::CostFunction(cost_functor, ceres::TAKE_OWNERSHIP, num_steps), nullptr,
-                             optimized_path.points_[i].data(), optimized_path.points_[i + 1].data());
+        // problem.AddResidualBlock(new DistanceToObstacleFunctor::CostFunction(cost_functor, ceres::TAKE_OWNERSHIP, num_steps), nullptr,
+        //                      optimized_path.points_[i].data(), optimized_path.points_[i + 1].data());
 
         // Tracking 
         problem.AddResidualBlock(new TrackingGlobalPlannerFunctor::CostFunction(new TrackingGlobalPlannerFunctor(config_.path_length_weight)),
@@ -193,9 +201,7 @@ Path SwarmCommander::trajectoryPlanning(const Path& initial_path, ceres::Solver:
     problem.SetParameterBlockConstant(optimized_path.points_.back().data());
 
     // Test Eval
-    {
-        boost::shared_lock<boost::shared_mutex> esdf_map_lock(voxblox_server_.esdf_map_mutex_);
-    
+    {    
         ceres::Problem::EvaluateOptions eval_options;
     
         double cost;
