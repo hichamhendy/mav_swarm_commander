@@ -149,6 +149,14 @@ void SwarmCommander::globalPlanner()
     ceres::Solver::Summary ceres_solver_summary;
     current_path_ = trajectoryPlanning(current_path_, &ceres_solver_summary);
     ROS_DEBUG_STREAM("Solver Summary" << ceres_solver_summary.FullReport());
+
+    ROS_DEBUG_STREAM("optimized path:");
+    for (const auto& p : current_path_.points_)
+    {
+        ROS_DEBUG_STREAM(p.transpose());
+    }
+
+    current_path_pub_.publish(current_path_.visualizationMarkerMsg(color_current_path_));
 }
 
 
@@ -198,7 +206,7 @@ Path SwarmCommander::trajectoryPlanning(const Path& initial_path, ceres::Solver:
         problem.Evaluate(eval_options, &cost, &residuals,
                         // nullptr, nullptr);
                         &gradient, &jacobian);
-        ROS_INFO_STREAM(kStreamPrefix << "cost: " << cost);
+        ROS_INFO_STREAM(kStreamPrefix << "Cost: " << cost);
     
         ROS_INFO_STREAM(kStreamPrefix <<"Residuals: ");
         for (const auto& r : residuals)

@@ -118,7 +118,6 @@ class SwarmCommander
         boost::optional<Eigen::Vector3d> loiter_position_;
         boost::optional<Eigen::Quaterniond> loiter_orientation_;
         boost::optional<manager_msgs::OffboardPathSetpoint> path_setpoint_msg_;
-        Path current_path_setpoint_;
 
         const std::string kStreamPrefix = "[Swarm Commander]: ";
         
