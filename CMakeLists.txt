@@ -3,7 +3,8 @@ project(mav_swarm_commander)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
-
+set(CMAKE_BUILD_TYPE "Release")
+set(CMAKE_CXX_FLAGS "-std=c++14")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -pthread")
 
 find_package(
@@ -18,6 +19,9 @@ find_package(
         manager_msgs
         tf2_ros
         esdf_map
+        mav_commander
+        std_msgs
+        libmavconn
         )
 
 ## System dependencies are found with CMake's conventions
@@ -33,7 +37,7 @@ generate_dynamic_reconfigure_options(
 catkin_package(
         INCLUDE_DIRS include
         # LIBRARIES ${PROJECT_NAME}
-        #  CATKIN_DEPENDS actionlib roscpp
+        # CATKIN_DEPENDS mav_commander # actionlib roscpp
         #  DEPENDS system_lib
 )
 
@@ -45,6 +49,7 @@ catkin_package(
 ## Your package locations should be listed before other locations
 include_directories(
         include
+        SYSTEM
         ${catkin_INCLUDE_DIRS}
         ${CERES_INCLUDE_DIRS}
 )
