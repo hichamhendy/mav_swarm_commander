@@ -42,9 +42,85 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
 
     trajectory_planning_timer_ = nh_trajectory_planning_.createTimer(ros::Duration(1.0), boost::bind(&SwarmCommander::trajectoryPlanningCallback, this));
 
+    run_thread = std::thread(&SwarmCommander::run, this);
+
     ROS_INFO_STREAM("==================================================================================");
     ROS_INFO_STREAM("SwarmCommander has been successfully contructed");
     ROS_INFO_STREAM("==================================================================================");
+}
+
+void SwarmCommander::run()
+{
+	ros::Duration(2.0).sleep();
+    // connect to standard prefix and with standard timeout
+    ROS_INFO_STREAM(kStreamPrefix << "Trying to connect to MAV.");
+    if (mav_interface->connect())
+    {
+        ROS_INFO_STREAM(kStreamPrefix << "Connected to MAV.");
+    }
+    else
+    {
+        ROS_ERROR_STREAM(kStreamPrefix << "Unable to connect to MAV, timeout!");
+        // exit run
+        return;
+    }
+
+    ros::Duration(2.0).sleep();
+    ROS_INFO_STREAM(kStreamPrefix << "Trying to take off.");
+    if (mav_interface->takeoff(config_.exploration_elevation))
+    {
+        ROS_INFO_STREAM(kStreamPrefix << "Takeoff successfull.");
+    }
+    else
+    {
+        ROS_ERROR_STREAM(kStreamPrefix << "Takeoff failed.");
+        // exit run
+        return;
+    }
+    ros::Duration(4.0).sleep();
+
+
+	ros::Rate run_freq(10);
+	while(ros::ok()) 
+	{
+		run_freq.sleep();
+	}
+
+	land();
+}
+
+void SwarmCommander::land()
+{
+	// call land command
+    ROS_INFO_STREAM(kStreamPrefix << "Trying to land.");
+    if (mav_interface->land())
+    {
+        ROS_INFO_STREAM(kStreamPrefix << "Landing successfull.");
+    }
+    else
+    {
+        ROS_ERROR_STREAM(kStreamPrefix << "Landing failed.");
+        // exit run
+        return ;
+    }
+
+    // call disarm command
+    ROS_INFO_STREAM(kStreamPrefix << "Trying to disarm.");
+    if (mav_interface->disarm())
+    {
+        ROS_INFO_STREAM(kStreamPrefix << "Disarming successfull.");
+    }
+    else
+    {
+        ROS_ERROR_STREAM(kStreamPrefix << "Disarming failed.");
+        // exit run
+        return;
+    }
+
+    // shut down the system
+    ROS_INFO_STREAM(kStreamPrefix << "Shutdown successfull.");
+
+	ros::shutdown();
 }
 
 bool SwarmCommander::updateCopterPosition()
@@ -134,7 +210,7 @@ void SwarmCommander::abortCurrentGoal()
     current_safe_path_.points_.clear();
 
     initial_path_pub_.publish(Path().visualizationMarkerMsg(color_initial_path_));
-    final_path_pub_.publish(Path().visualizationMarkerMsg(color_final_path_));
+    // final_path_pub_.publish(Path().visualizationMarkerMsg(color_final_path_));
 }
 
 void SwarmCommander::globalPlanner()
@@ -161,9 +237,10 @@ void SwarmCommander::globalPlanner()
     current_path_pub_.publish(current_path_.visualizationMarkerMsg(color_current_path_));
 
     ros::Rate setpoint_loop_rate(10);
-    for(std::size_t pt = 0; pt < current_path_.points_.size() - 1; pt++)
+    for(std::size_t i = 0; i < current_path_.points_.size() - 1; i++)
     {   
-
+        mav_interface->setPositionYaw(current_path_.points_[i] , 0);
+        setpoint_loop_rate.sleep();
     }
 }
 

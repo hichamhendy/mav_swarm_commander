@@ -19,6 +19,8 @@
 
 #include <GeographicLib/LocalCartesian.hpp>
 
+#include <thread>
+
 #include "mav_swarm_commander/path.h"
 #include "mav_swarm_commander/cost_functionals.h"
 #include "esdf_map/signed_distance_field.h"
@@ -120,6 +122,8 @@ class SwarmCommander
         boost::optional<Eigen::Vector3d> loiter_position_;
         boost::optional<Eigen::Quaterniond> loiter_orientation_;
         boost::optional<manager_msgs::OffboardPathSetpoint> path_setpoint_msg_;
+
+        std::thread run_thread;
 
         const std::string kStreamPrefix = "[Swarm Commander]: ";
         
@@ -231,4 +235,16 @@ class SwarmCommander
          * @param yaw_setpoint_rad 
          */
         void commandTrajectory(const Path& path, const double yaw_setpoint_rad);
+
+        /**
+         * @brief The functions runs the core of the singelton
+         * 
+         */
+        void run();
+
+        /**
+         * @brief safe landing process
+         * 
+         */
+        void land();
 };
