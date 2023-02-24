@@ -5,7 +5,15 @@
 class DistanceToObstacleFunctor
 {
 public:
-  using CostFunction = ceres::NumericDiffCostFunction<DistanceToObstacleFunctor, ceres::CENTRAL, ceres::DYNAMIC, 3, 3>;
+    /**
+     * @brief 
+     * ceres::CENTRAL -> Finite Differencing Scheme ->  more accurate than FORWARD at the cost of twice as many function evaluations than forward difference
+     * ceres::DYNAMIC -> Indicate dynamic number of residuals, since that is dependent on num_steps that varies pased on the length beween points
+     * 3 - Dimension of x
+     * 3 - Dimension of y
+     * 
+     */
+    using CostFunction = ceres::NumericDiffCostFunction<DistanceToObstacleFunctor, ceres::CENTRAL, ceres::DYNAMIC, 3, 3>; // http://ceres-solver.org/nnls_modeling.html#numericdiffcostfunction
 
     /**
      * @brief Construct a new Distance To Obstacle Functor object
@@ -25,11 +33,12 @@ public:
     }
 
     /**
-     * @brief overloading the () operator
+     * @brief overloading the () operator to compute the residuals
+     * more info about constructions // http://ceres-solver.org/nnls_modeling.html#numericdiffcostfunction
      * 
      * @param raw_pos1 
      * @param raw_pos2 
-     * @param residual 
+     * @param residual -> The functor writes the computed value here. Shall NOT be constant
      * @return true 
      * @return false 
      */
@@ -81,4 +90,46 @@ private:
     const double weight_soft_obstacle_;
     const double weight_hard_obstacle_;
     const std::size_t num_steps_;
+};
+
+
+
+class TrackingGlobalPlannerFunctor
+{
+public:
+    /**
+     * @brief 
+     * 1 -> kNumResiduals, which Indicate 1 dimensional of residuals
+     * 3 - Dimension of x
+     * 3 - Dimension of y
+     * More Infoon http://ceres-solver.org/nnls_modeling.html#autodiffcostfunction
+     */
+    using CostFunction = ceres::AutoDiffCostFunction<TrackingGlobalPlannerFunctor, 1, 3, 3>;
+
+    TrackingGlobalPlannerFunctor(const double weight) : weight_(weight) {}
+
+    /**
+     * @brief 
+     * 
+     * @tparam T 
+     * @param raw_pos1 
+     * @param raw_pos2 
+     * @param residual 
+     * @return true 
+     * @return false 
+     */
+    template <typename T> 
+    bool operator()(const T* const raw_pos1, const T* const raw_pos2, T* residual) const
+    {
+        const Eigen::Matrix<T, 3, 1> p1{raw_pos1[0], raw_pos1[1], raw_pos1[2]};
+        const Eigen::Matrix<T, 3, 1> p2{raw_pos2[0], raw_pos2[1], raw_pos2[2]};
+
+        const Eigen::Matrix<T, 3, 1> dist = p1 - p2;
+        residual[0] = dist.norm() * T(weight_);
+
+        return true;
+    }
+
+    private:
+    const double weight_;
 };
