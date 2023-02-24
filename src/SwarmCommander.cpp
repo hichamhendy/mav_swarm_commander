@@ -1,11 +1,16 @@
 #include "mav_swarm_commander/SwarmCommander.h"
 
 SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv,
-                               const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_trajectory_planning):
+                               const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_trajectory_planning,
+                               const ros::NodeHandle& nh_esdf_map):
                                nh_(nh), nh_private_(nh_priv), nh_waypoint_planning_(nh_waypoint_planning), 
-                               nh_trajectory_planning_(nh_trajectory_planning), flyto_server_(nh_trajectory_planning_, "flyto_action", false)
+                               nh_trajectory_planning_(nh_trajectory_planning), nh_esdf_map_(nh_esdf_map),
+                               flyto_server_(nh_trajectory_planning_, "flyto_action", false)
 
 {
+    sdf_map_.reset(new VoxelGridMap);
+    sdf_map_->initMap(nh_esdf_map);
+
     initial_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("/initial_path", 1);
     current_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("/current_path", 1);
     final_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("/final_path", 1);
@@ -60,7 +65,7 @@ bool SwarmCommander::updateCopterPosition()
     }
     catch (tf2::TransformException& ex)
     {
-        ROS_ERROR_STREAM("Could not get the tf transform odom -> base_link");
+        ROS_ERROR_STREAM(kStreamPrefix << "Could not get the tf transform odom -> base_link");
         return false;
     }
 }
@@ -76,7 +81,7 @@ void SwarmCommander::goalCallback()
     current_path_.points_.clear();
     current_safe_path_.points_.clear();
 
-    trajectoryPlanningCallback(); // initate the trajectory builder based on the received goal
+    globalPlanner(); // initate the trajectory builder based on the received goal
 }
 
 void SwarmCommander::preemptCallback()
@@ -130,13 +135,140 @@ void SwarmCommander::abortCurrentGoal()
     final_path_pub_.publish(Path().visualizationMarkerMsg(color_final_path_));
 }
 
-
-void SwarmCommander::trajectoryPlanningCallback()
+void SwarmCommander::globalPlanner()
 {
+    // Temporary solution
+    if (initial_path_.points_.empty())
+    {
+      initial_path_.addPoint(current_copter_position_);
+      initial_path_.addPoint(destination_point_);
+    }
 
+    current_path_ = resamplePath(initial_path_);
+
+    ceres::Solver::Summary ceres_solver_summary;
+    current_path_ = trajectoryPlanning(current_path_, &ceres_solver_summary);
+    ROS_DEBUG_STREAM("Solver Summary" << ceres_solver_summary.FullReport());
 }
+
+
+Path SwarmCommander::trajectoryPlanning(const Path& initial_path, ceres::Solver::Summary* summary)
+{
+    Path optimized_path = initial_path;
+
+    ceres::Problem problem;
+
+    for (int i = 0; i < optimized_path.points_.size() - 1; i++)
+    {
+        const Eigen::Vector3d p1 = optimized_path.points_[i];
+        const Eigen::Vector3d p2 = optimized_path.points_[i + 1];
+
+        const Eigen::Vector3d vector_dir = (p2-p1).normalized();
+        const double vector_mag = (p2-p1).norm();
+        const double step_length = 0.1;
+        std::size_t num_steps = std::round(vector_mag/step_length);
+
+        // Distance to obstacles residuals
+        auto cost_functor = new DistanceToObstacleFunctor( *sdf_map_, num_steps, config_.min_obstacle_distance + config_.additional_min_obstacle_distance,
+        config_.min_obstacle_distance, config_.soft_obstacle_distance_weight, config_.hard_obstacle_distance_weight);
+
+        problem.AddResidualBlock(new DistanceToObstacleFunctor::CostFunction(cost_functor, ceres::TAKE_OWNERSHIP, num_steps), nullptr,
+                             optimized_path.points_[i].data(), optimized_path.points_[i + 1].data());
+
+        // Tracking 
+        problem.AddResidualBlock(new TrackingGlobalPlannerFunctor::CostFunction(new TrackingGlobalPlannerFunctor(config_.path_length_weight)),
+        nullptr, optimized_path.points_[i].data(), optimized_path.points_[i + 1].data());
+    }
+
+    // Set the start-point constant!
+    problem.SetParameterBlockConstant(optimized_path.points_[0].data());
+    problem.SetParameterBlockConstant(optimized_path.points_.back().data());
+
+    // Test Eval
+    {
+        boost::shared_lock<boost::shared_mutex> esdf_map_lock(voxblox_server_.esdf_map_mutex_);
+    
+        ceres::Problem::EvaluateOptions eval_options;
+    
+        double cost;
+        std::vector<double> residuals;
+        std::vector<double> gradient;
+        ceres::CRSMatrix jacobian;
+    
+        problem.Evaluate(eval_options, &cost, &residuals,
+                        // nullptr, nullptr);
+                        &gradient, &jacobian);
+        ROS_INFO_STREAM(kStreamPrefix << "cost: " << cost);
+    
+        ROS_INFO_STREAM(kStreamPrefix <<"Residuals: ");
+        for (const auto& r : residuals)
+        {
+        ROS_INFO_STREAM(r);
+        }
+    
+        ROS_INFO_STREAM(kStreamPrefix << "Gradients: ");
+        for (const auto& g : gradient)
+        {
+        ROS_INFO_STREAM(g);
+        }
+    
+        ROS_INFO_STREAM(kStreamPrefix << "Jacobian Matrices");
+        for (const auto& j : jacobian.values)
+        {
+        ROS_INFO_STREAM(j);
+        }
+    }
+
+    // Run the solver!
+    {
+        ceres::Solver::Options options;
+        options.minimizer_type = ceres::LINE_SEARCH;
+        options.line_search_type = ceres::ARMIJO;
+        options.line_search_direction_type = ceres::STEEPEST_DESCENT;
+        options.max_num_iterations = config_.max_num_iterations;
+        options.minimizer_progress_to_stdout = false;
+        ceres::Solve(options, &problem, summary);
+    }
+
+
+    return optimized_path;
+}
+
 
 void SwarmCommander::reconfigure(mav_swarm_commander::SwarmCommanderConfig& config, uint32_t level)
 {
 	config_ = config;
+}
+
+void SwarmCommander::commandTrajectory(const Path& path, const double yaw_setpoint_rad)
+{
+    if (path.points_.size() < 2)
+    {
+        ROS_ERROR_STREAM("To perform path following, at least 2 waypoints are required!");
+        return;
+    }
+
+    const Eigen::AngleAxisd angle_axis_orientation_setpoint(yaw_setpoint_rad, Eigen::Vector3d::UnitZ());
+    const Eigen::Quaterniond quat_orientation_setpoint(angle_axis_orientation_setpoint);
+    publish(path, quat_orientation_setpoint);
+
+    const Eigen::ParametrizedLine<double, 3> current_3d_line_segment = Eigen::ParametrizedLine<double, 3>::Through(path.points_[0], path.points_[1]);
+    const Eigen::Vector3d projected_copter_position = current_3d_line_segment.projection(current_copter_position_);
+
+}
+
+
+void SwarmCommander::publish(const Path& path, const Eigen::Quaterniond& quat_orientation_setpoint)
+{
+    geometry_msgs::PoseStamped PoseStamped_position_setpoint;
+    PoseStamped_position_setpoint.header.stamp = ros::Time::now();
+    PoseStamped_position_setpoint.header.frame_id = "odom";
+    PoseStamped_position_setpoint.pose.position.x = path.points_[1].x();
+    PoseStamped_position_setpoint.pose.position.y = path.points_[1].y();
+    PoseStamped_position_setpoint.pose.position.z = path.points_[1].z();
+    PoseStamped_position_setpoint.pose.orientation.x = quat_orientation_setpoint.x();
+    PoseStamped_position_setpoint.pose.orientation.y = quat_orientation_setpoint.y();
+    PoseStamped_position_setpoint.pose.orientation.z = quat_orientation_setpoint.z();
+    PoseStamped_position_setpoint.pose.orientation.w = quat_orientation_setpoint.w();
+    offboard_mode_position_setpoint_marker_pub_.publish(PoseStamped_position_setpoint);
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#define __PACKAGE_NAME__ "Swarmming"
+
 #include <actionlib/server/simple_action_server.h>
 
 #include <manager_msgs/FlyToAction.h>
@@ -10,6 +12,8 @@
 #include <ros/ros.h>
 #include <tf2_ros/transform_listener.h>
 
+#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/TwistStamped.h>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
@@ -18,6 +22,9 @@
 #include <GeographicLib/LocalCartesian.hpp>
 
 #include "mav_swarm_commander/path.h"
+#include "mav_swarm_commander/cost_functionals.h"
+#include "esdf_map/signed_distance_field.h"
+
 
 #include <future> // to name the type of the mutex used
 
@@ -26,7 +33,7 @@ typedef actionlib::SimpleActionServer<manager_msgs::FlyToAction> FlyToServer; //
 class SwarmCommander
 {
     public:
-        SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv, const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_trajectory_planning_);
+        SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv, const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_trajectory_planning, const ros::NodeHandle& nh_esdf_map);
         
         /**
          * Copy operator for such a class shouldn't happen
@@ -43,6 +50,9 @@ class SwarmCommander
         ros::NodeHandle nh_private_; // at the mean time it is made to take care of internal matters
         ros::NodeHandle nh_waypoint_planning_;      // to handle the waypoint planner 
         ros::NodeHandle nh_trajectory_planning_; // to communicate the results
+        ros::NodeHandle nh_esdf_map_;
+
+        VoxelGridMap::Ptr sdf_map_;
 
         // The timer triggering the main trajectory planning loop
         ros::Timer trajectory_planning_timer_;
@@ -107,10 +117,10 @@ class SwarmCommander
         std::string px4_flight_mode_;
         boost::optional<Eigen::Vector3d> loiter_position_;
         boost::optional<Eigen::Quaterniond> loiter_orientation_;
-        boost::optional<drakula_msgs::OffboardPathSetpoint> path_setpoint_msg_;
+        boost::optional<manager_msgs::OffboardPathSetpoint> path_setpoint_msg_;
         Path current_path_setpoint_;
 
-
+        const std::string kStreamPrefix = "[Swarm Commander]: ";
         
         ros::Timer publish_position_setpoint_timer_; // Setpoint
 
@@ -180,7 +190,6 @@ class SwarmCommander
         */
         void finishCurrentGoal();
 
-        
         /**
          * Sets the status of the active goal to aborted.
         */
@@ -189,5 +198,36 @@ class SwarmCommander
         /**
          * sampling the path to avoid aggressiveness 
         */
-        Path resamplePath(const Path& initial_path, const double max_path_length);
+        Path resamplePath(const Path& initial_path, const double max_path_length = 0.75);
+
+        /**
+         * @brief based on current_safe_path_ , a path will be commanded on the interface
+         * Steps:
+         * 1- set the initial as a reference for the optimization 
+         * 2- Build the problem
+         * 3- Add residuals for the paths between two consecutive waypoints by looping on the waypoints
+         * 4- Enforce hard constraints
+         * 5- Run the solver
+         */
+        Path trajectoryPlanning(const Path& initial_path, ceres::Solver::Summary* summary);
+
+        /**
+         * @brief handling the RRT* module
+         * 
+         */
+        void globalPlanner();
+
+        /**
+         * @brief publish the path to be commanded
+         * 
+         */
+        void publish(const Path& path, const Eigen::Quaterniond& quat_orientation_setpoint);
+
+        /**
+         * @brief The function gives setpoints to PX4 over the interface
+         * 
+         * @param path 
+         * @param yaw_setpoint_rad 
+         */
+        void commandTrajectory(const Path& path, const double yaw_setpoint_rad);
 };
