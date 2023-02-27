@@ -125,7 +125,7 @@ public:
         const Eigen::Matrix<T, 3, 1> p2{raw_pos2[0], raw_pos2[1], raw_pos2[2]};
 
         const Eigen::Matrix<T, 3, 1> dist = p1 - p2;
-        residual[0] = dist.norm() * T(weight_);
+        residual[0] = 0.5 * pow(dist.norm(),2) * T(weight_);
 
         return true;
     }
