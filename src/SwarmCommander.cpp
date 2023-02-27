@@ -36,17 +36,25 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
 
     flyto_server_.registerGoalCallback(boost::bind(&SwarmCommander::goalCallback, this));
     flyto_server_.registerPreemptCallback(boost::bind(&SwarmCommander::preemptCallback, this));
-    flyto_server_.start();
+    flyto_server_.start(); // regarding auto_start in the construction the boolean value that tells the ActionServer wheteher or not to start publishing as soon as it comes up. THIS SHOULD ALWAYS BE SET TO FALSE TO AVOID RACE CONDITIONS and start() should be called after construction of the server.
 
     dynamic_reconfigure_server_.setCallback(boost::bind(&SwarmCommander::reconfigure, this, _1, _2));
 
-    trajectory_planning_timer_ = nh_private_.createTimer(ros::Duration(1.0), boost::bind(&SwarmCommander::globalPlanner, this)); // in case the planner applied a horizon shift
+    // trajectory_planning_timer_ = nh_private_.createTimer(ros::Duration(1.0), boost::bind(&SwarmCommander::globalPlanner, this)); // in case the planner applied a horizon shift
 
     run_thread = std::thread(&SwarmCommander::run, this);
 
     ROS_INFO_STREAM("==================================================================================");
     ROS_INFO_STREAM("SwarmCommander has been successfully contructed");
     ROS_INFO_STREAM("==================================================================================");
+}
+
+SwarmCommander::~SwarmCommander()
+{
+    if(run_thread.joinable())
+		run_thread.join();
+
+    ros::shutdown();
 }
 
 void SwarmCommander::run()
@@ -215,6 +223,18 @@ void SwarmCommander::abortCurrentGoal()
 
 void SwarmCommander::globalPlanner()
 {
+    // Try to get the current copter position
+    if (!updateCopterPosition())
+    {
+        ROS_ERROR_STREAM("Could not get the current copter position => Action failed!");
+        abortCurrentGoal();
+        ROS_INFO_STREAM("==================================================================================");
+        return;
+    }
+
+    ROS_DEBUG_STREAM("current_copter_position_: " << current_copter_position_.transpose());
+    ROS_INFO_STREAM("flyto_server_.isActive()=" << flyto_server_.isActive());
+
     // Temporary solution
     if (initial_path_.points_.empty())
     {

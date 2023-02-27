@@ -35,6 +35,12 @@ class SwarmCommander
 {
     public:
         SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv,const ros::NodeHandle& nh_interface,const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_esdf_map);
+
+        /**
+         * @brief Destroy the Swarm Commander object and closes the threads opnend in the constructor
+         * 
+         */
+        ~SwarmCommander();
         
         /**
          * Copy operator for such a class shouldn't happen
