@@ -34,7 +34,7 @@ typedef actionlib::SimpleActionServer<manager_msgs::FlyToAction> FlyToServer; //
 class SwarmCommander
 {
     public:
-        SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv,const ros::NodeHandle& nh_interface,const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_trajectory_planning, const ros::NodeHandle& nh_esdf_map);
+        SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv,const ros::NodeHandle& nh_interface,const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_esdf_map);
         
         /**
          * Copy operator for such a class shouldn't happen
@@ -51,7 +51,6 @@ class SwarmCommander
         ros::NodeHandle nh_private_; // at the mean time it is made to take care of internal matters
         ros::NodeHandle nh_interface_;
         ros::NodeHandle nh_waypoint_planning_;      // to handle the waypoint planner 
-        ros::NodeHandle nh_trajectory_planning_; // to communicate the results
         ros::NodeHandle nh_esdf_map_;
         
 
