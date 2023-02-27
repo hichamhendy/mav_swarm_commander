@@ -1,11 +1,11 @@
 #include "mav_swarm_commander/SwarmCommander.h"
 
 SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle& nh_priv,const ros::NodeHandle& nh_interface,
-                               const ros::NodeHandle& nh_waypoint_planning, const ros::NodeHandle& nh_trajectory_planning,
+                               const ros::NodeHandle& nh_waypoint_planning,
                                const ros::NodeHandle& nh_esdf_map):
                                nh_(nh), nh_private_(nh_priv), nh_interface_(nh_interface), nh_waypoint_planning_(nh_waypoint_planning), 
-                               nh_trajectory_planning_(nh_trajectory_planning), nh_esdf_map_(nh_esdf_map),
-                               flyto_server_(nh_trajectory_planning_, "flyto_action", false)
+                               nh_esdf_map_(nh_esdf_map),
+                               flyto_server_(nh_private_, "flyto_action", false)
 
 {
     sdf_map_.reset(new VoxelGridMap);
@@ -13,11 +13,11 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
 
     mav_interface.reset(new nut::MavCommander(nh_interface_, true, false, true));
 
-    initial_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("/initial_path", 1);
-    current_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("/current_path", 1);
-    final_path_pub_ = nh_trajectory_planning_.advertise<visualization_msgs::MarkerArray>("/final_path", 1);
-    path_setpoint_pub_ = nh_trajectory_planning_.advertise<manager_msgs::OffboardPathSetpoint>("/path_setpoint", 1);
-    offboard_mode_position_setpoint_marker_pub_ = nh_trajectory_planning_.advertise<geometry_msgs::PoseStamped>("/offboard_position_setpoint", 1);
+    initial_path_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/initial_path", 1);
+    current_path_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/current_path", 1);
+    final_path_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/final_path", 1);
+    path_setpoint_pub_ = nh_private_.advertise<manager_msgs::OffboardPathSetpoint>("/path_setpoint", 1);
+    offboard_mode_position_setpoint_marker_pub_ = nh_private_.advertise<geometry_msgs::PoseStamped>("/offboard_position_setpoint", 1);
 
     color_initial_path_.r = 1.0;
     color_initial_path_.g = 0.5;
@@ -40,7 +40,7 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
 
     dynamic_reconfigure_server_.setCallback(boost::bind(&SwarmCommander::reconfigure, this, _1, _2));
 
-    trajectory_planning_timer_ = nh_trajectory_planning_.createTimer(ros::Duration(1.0), boost::bind(&SwarmCommander::trajectoryPlanningCallback, this));
+    trajectory_planning_timer_ = nh_private_.createTimer(ros::Duration(1.0), boost::bind(&SwarmCommander::globalPlanner, this)); // in case the planner applied a horizon shift
 
     run_thread = std::thread(&SwarmCommander::run, this);
 
@@ -362,4 +362,23 @@ void SwarmCommander::publish(const Path& path, const Eigen::Quaterniond& quat_or
     PoseStamped_position_setpoint.pose.orientation.z = quat_orientation_setpoint.z();
     PoseStamped_position_setpoint.pose.orientation.w = quat_orientation_setpoint.w();
     offboard_mode_position_setpoint_marker_pub_.publish(PoseStamped_position_setpoint);
+}
+
+Path SwarmCommander::resamplePath(const Path& initial_path, const double max_path_length)
+{
+    Path resampled_path;
+    resampled_path.addPoint(*initial_path.points_.begin());
+    for (int i = 0; i < initial_path.points_.size() - 1; i++)
+    {
+        // Start- and end-point of the current segment
+        auto p1 = initial_path.points_[i];
+        const auto p2 = initial_path.points_[i + 1];
+        while ((p2 - p1).norm() > max_path_length)
+        {
+        p1 = p1 + (p2 - p1).normalized() * 0.5 * max_path_length;
+        resampled_path.addPoint(p1);
+        }
+        resampled_path.addPoint(p2);
+    }
+    return resampled_path;
 }
