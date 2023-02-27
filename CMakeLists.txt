@@ -36,7 +36,7 @@ generate_dynamic_reconfigure_options(
 
 catkin_package(
         INCLUDE_DIRS include
-        # LIBRARIES ${PROJECT_NAME}
+        LIBRARIES ${PROJECT_NAME}
         # CATKIN_DEPENDS mav_commander # actionlib roscpp
         #  DEPENDS system_lib
 )
@@ -68,33 +68,17 @@ add_library(${PROJECT_NAME}
 )
 
 
-#target_link_libraries( ${PROJECT_NAME}
-#        ${catkin_LIBRARIES}
-#        ${INCLUDE_FILES}
-#        ${PROJECT_NAME} # important to find include libraries
-#        ${CERES_LIBRARIES}
-#)
 
 ## Add cmake target dependencies of the library
 ## as an example, code may need to be generated before libraries
 ## either from message generation or dynamic reconfigure
 # add_dependencies(${PROJECT_NAME} ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
 
-
-# add_executable(${PROJECT_NAME}_node src/nodes/launch_node.cpp)
-
- 
-
-## Declare a C++ executable
-# Declare a C++ executable
-#add_executable(${PROJECT_NAME}
-#        src/SwarmCommander.cpp
-#        src/line_segment.cpp
-#        src/path.cpp
-#        # src/cost_functions.hpp
-#        )
-#add_dependencies(${PROJECT_NAME} ${PROJECT_NAME}_gencfg)
-#target_link_libraries(${PROJECT_NAME}
-#        ${catkin_LIBRARIES}
-#        ${CERES_LIBRARIES}
-#        )
+add_executable(${PROJECT_NAME}_node src/nodes/swarm_commander_node.cpp)
+target_link_libraries(${PROJECT_NAME}_node
+        ${catkin_LIBRARIES}
+        ${PROJECT_NAME} 
+        )
+add_dependencies(${PROJECT_NAME}_node
+        ${catkin_EXPORTED_TARGETS}
+        )
