@@ -36,11 +36,11 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
 
     flyto_server_.registerGoalCallback(boost::bind(&SwarmCommander::goalCallback, this));
     flyto_server_.registerPreemptCallback(boost::bind(&SwarmCommander::preemptCallback, this));
-    flyto_server_.start(); // regarding auto_start in the construction the boolean value that tells the ActionServer wheteher or not to start publishing as soon as it comes up. THIS SHOULD ALWAYS BE SET TO FALSE TO AVOID RACE CONDITIONS and start() should be called after construction of the server.
+    flyto_server_.start(); // regarding auto_start in the construction, the boolean value that tells the ActionServer wheteher or not to start publishing as soon as it comes up. THIS SHOULD ALWAYS BE SET TO FALSE TO AVOID RACE CONDITIONS and start() should be called after construction of the server.
 
     dynamic_reconfigure_server_.setCallback(boost::bind(&SwarmCommander::reconfigure, this, _1, _2));
 
-    // trajectory_planning_timer_ = nh_private_.createTimer(ros::Duration(1.0), boost::bind(&SwarmCommander::globalPlanner, this)); // in case the planner applied a horizon shift
+    trajectory_planning_timer_ = nh_private_.createTimer(ros::Duration(1.0), boost::bind(&SwarmCommander::globalPlanner, this)); // in case the planner applied a horizon shift
 
     run_thread = std::thread(&SwarmCommander::run, this);
 
@@ -226,14 +226,33 @@ void SwarmCommander::globalPlanner()
     // Try to get the current copter position
     if (!updateCopterPosition())
     {
-        ROS_ERROR_STREAM("Could not get the current copter position => Action failed!");
+        ROS_ERROR_STREAM(kStreamPrefix << "Could not get the current copter position => Action failed!");
         abortCurrentGoal();
-        ROS_INFO_STREAM("==================================================================================");
+        ROS_INFO_STREAM(kStreamPrefix <<"==================================================================================");
         return;
     }
 
     ROS_DEBUG_STREAM("current_copter_position_: " << current_copter_position_.transpose());
-    ROS_INFO_STREAM("flyto_server_.isActive()=" << flyto_server_.isActive());
+    ROS_INFO_STREAM(kStreamPrefix << "Fly To Server activity is on: " << flyto_server_.isActive());
+
+    if (!flyto_server_.isActive())
+    {
+        ROS_INFO_STREAM(kStreamPrefix << "=========================Server ain't active======================================");
+        return;
+    }
+
+    const double dist_to_destination = (current_copter_position_ - destination_point_).norm();
+    ROS_INFO_STREAM(kStreamPrefix << "Distance to destination in meter = " << dist_to_destination);
+
+    if (dist_to_destination < config_.goal_vicinity)
+    {
+        ROS_INFO_STREAM(kStreamPrefix << "Drone is located in goal vicinity; Initiating a planning process ain't needed");
+        finishCurrentGoal();
+        ROS_INFO_STREAM(kStreamPrefix << "==================================================================================");
+        return;
+    }
+
+
 
     // Temporary solution
     if (initial_path_.points_.empty())
@@ -241,6 +260,7 @@ void SwarmCommander::globalPlanner()
       initial_path_.addPoint(current_copter_position_);
       initial_path_.addPoint(destination_point_);
     }
+    initial_path_pub_.publish(initial_path_.visualizationMarkerMsg(color_initial_path_));
 
     current_path_ = resamplePath(initial_path_);
 
@@ -317,17 +337,17 @@ Path SwarmCommander::trajectoryPlanning(const Path& initial_path, ceres::Solver:
         ROS_INFO_STREAM(r);
         }
     
-        ROS_INFO_STREAM(kStreamPrefix << "Gradients: ");
-        for (const auto& g : gradient)
-        {
-        ROS_INFO_STREAM(g);
-        }
+        // ROS_INFO_STREAM(kStreamPrefix << "Gradients: ");
+        // for (const auto& g : gradient)
+        // {
+        // ROS_INFO_STREAM(g);
+        // }
     
-        ROS_INFO_STREAM(kStreamPrefix << "Jacobian Matrices");
-        for (const auto& j : jacobian.values)
-        {
-        ROS_INFO_STREAM(j);
-        }
+        // ROS_INFO_STREAM(kStreamPrefix << "Jacobian Matrices");
+        // for (const auto& j : jacobian.values)
+        // {
+        // ROS_INFO_STREAM(j);
+        // }
     }
 
     // Run the solver!

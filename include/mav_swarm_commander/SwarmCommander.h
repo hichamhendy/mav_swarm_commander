@@ -130,7 +130,7 @@ class SwarmCommander
 
         std::thread run_thread;
 
-        const std::string kStreamPrefix = "[Swarm Commander]: ";
+        const std::string kStreamPrefix = "[Swarm Commanding]: ";
         
         ros::Timer publish_position_setpoint_timer_; // Setpoint
 
