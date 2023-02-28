@@ -16,6 +16,8 @@
 #include <Eigen/Geometry>
 
 #include <ceres/ceres.h>
+#include <cppad/cppad.hpp>
+#include <cppad/ipopt/solve.hpp>
 
 #include <GeographicLib/LocalCartesian.hpp>
 
@@ -252,4 +254,9 @@ class SwarmCommander
          * 
          */
         void land();
+
+        /**
+         * 
+        */
+        Path modelPredictivePlanning(const Path& initial_path, ceres::Solver::Summary* summary);
 };

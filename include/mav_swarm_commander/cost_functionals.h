@@ -133,3 +133,126 @@ public:
     private:
     const double weight_;
 };
+
+class FG_eval 
+{   private:
+        size_t N_;
+        double dt_; // connect with ros
+        Eigen::VectorXd coeffs_;
+        size_t x_start = 0;
+        size_t y_start = x_start + N_;
+        size_t z_start = y_start + N_;
+        size_t x_dot_start = z_start + N_;
+        size_t y_dot_start = x_dot_start + N_;
+        size_t z_dot_start = y_dot_start + N_;
+        size_t roll_start = z_dot_start + N_;
+        size_t pitch_start = roll_start + N_;
+        size_t roll_command_start = pitch_start + N_;
+        size_t pitch_command_start = roll_command_start + N_;
+        size_t thrust_command_start = pitch_command_start + N_ - 1;
+        const Eigen::Vector3d p1_ref_;
+        const Eigen::Vector3d p2_ref_;
+        const double weight_;
+
+    public:
+        
+        // Coefficients of the fitted polynomial.
+        FG_eval(VectorXd coeffs, size_t N, double dt, Eigen::Vector3d p1_ref, Eigen::Vector3d p1_ref) 
+        { 
+            this->coeffs = coeffs;
+            this->dt_ = dt;
+            this->N_ = N;
+            this->p1_ref_ = p1_ref;
+            this->p2_ref_ = p2_ref;
+        }
+
+        typedef CPPAD_TESTVECTOR(CppAD::AD<double>) ADvector;
+        // `fg` is a vector containing the cost and constraints.
+        // `vars` is a vector containing the variable values (state & actuators).
+        void operator()(ADvector& fg, const ADvector& vars) 
+        {
+            // The cost is stored is the first element of `fg`.
+            // Any additions to the cost should be added to `fg[0]`.
+            fg[0] = 0;
+            const Eigen::Vector3d vector_direction = (p2_ref - p1_ref).normalized();
+            const double segment_length = (p2_ref - p1_ref).norm();
+            const double step_length = segment_length / N_;
+
+            // Reference State Cost
+            for (int t = 0; t < N_; ++t)
+            {
+                const Eigen::Vector3d inspection_pos = p1_ref + vector_direction * step_length * (t + 1);
+
+                fg[0] += 0.5 * CppAD::pow(vars[x_start + t] - inspection_pos.x(), 2);
+                fg[0] += 0.5 * CppAD::pow(vars[y_start + t] - inspection_pos.y(), 2);
+                fg[0] += 0.5 * CppAD::pow(vars[z_start + t] - inspection_pos.z(), 2);
+            }
+
+            // Minimize the use of actuators.
+            for (int t = 0; t < N - 1; ++t) 
+            {
+                fg[0] += CppAD::pow(vars[roll_command_start + t], 2);
+                fg[0] += CppAD::pow(vars[pitch_command_start + t], 2);
+                fg[0] += CppAD::pow(vars[thrust_command_start + t], 2);
+            }
+
+            // Minimize the value gap between sequential actuations to avoid overexcertion which can't be anyway implemented by PX4.
+            for (int t = 0; t < N_ - 2; ++t) 
+            {
+                fg[0] += CppAD::pow(vars[roll_command_start + t + 1] - vars[roll_command_start + t], 2);
+                fg[0] += CppAD::pow(vars[pitch_command_start + t + 1] - vars[pitch_command_start + t], 2);
+                fg[0] += CppAD::pow(vars[thrust_command_start + t + 1] - vars[thrust_command_start + t], 2);
+            }
+    
+            
+            // Setup Constraints
+            //
+            // NOTE: In this section you'll setup the model constraints.
+            // Initial constraints
+            //
+            // We add 1 to each of the starting indices due to cost being located at
+            // index 0 of `fg`.
+            // This bumps up the position of all the other values.
+            fg[1 + x_start] = vars[x_start];
+            fg[1 + y_start] = vars[y_start];
+            fg[1 + z_start] = vars[z_start];
+            fg[1 + x_dot_start] = vars[x_dot_start];
+            fg[1 + y_dot_start] = vars[y_dot_start];
+            fg[1 + z_dot_start] = vars[z_dot_start];
+            fg[1 + roll_start] = vars[roll_start];
+            fg[1 + pitch_start] = vars[pitch_start];
+            
+            // The rest of the constraints
+            for (int t = 1; t < N; ++t) 
+            {
+                // The state at time t+1 
+                CppAD::AD<double> x1 = vars[x_start + t];
+                CppAD::AD<double> y1 = vars[y_start + t];
+                CppAD::AD<double> z1 = vars[z_start + t];
+                CppAD::AD<double> x_dot1 = vars[x_dot_start + t];
+                CppAD::AD<double> y_dot1 = vars[y_dot_start + t];
+                CppAD::AD<double> z_dot1 = vars[z_dot_start + t];
+                CppAD::AD<double> roll1 = vars[roll_start + t];
+                CppAD::AD<double> pitch1 = vars[pitch_start + t];
+
+                // The state at time t
+                CppAD::AD<double> x0 = vars[x_start - t];
+                CppAD::AD<double> y0 = vars[y_start - t];
+                CppAD::AD<double> z0 = vars[z_start - t];
+                CppAD::AD<double> x_dot0 = vars[x_dot_start - t];
+                CppAD::AD<double> y_dot0 = vars[y_dot_start - t];
+                CppAD::AD<double> z_dot0 = vars[z_dot_start - t];
+                CppAD::AD<double> roll0 = vars[roll_start - t];
+                CppAD::AD<double> pitch0 = vars[pitch_start - t];
+
+                // Only consider the actuation at time t
+                CppAD::AD<double> roll_command0 = vars[roll_command_start + t - 1];
+                CppAD::AD<double> pitch_command0 = vars[pitch_command_start + t - 1];
+                CppAD::AD<double> thrust_command0 = vars[thrust_command_start + t - 1];
+
+
+                // Note that we start the loop at t=1, because the values at t=0 are set to our initial state - those values are not calculated by the solver.
+
+            }
+        }
+};

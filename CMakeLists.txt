@@ -78,6 +78,7 @@ add_executable(${PROJECT_NAME}_node src/nodes/swarm_commander_node.cpp)
 target_link_libraries(${PROJECT_NAME}_node
         ${catkin_LIBRARIES}
         ${PROJECT_NAME} 
+        # ipopt python2.7
         )
 add_dependencies(${PROJECT_NAME}_node
         ${catkin_EXPORTED_TARGETS}
