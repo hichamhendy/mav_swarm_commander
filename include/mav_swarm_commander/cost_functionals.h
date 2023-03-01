@@ -256,9 +256,9 @@ class FG_eval
                 fg[1 + x_start + t] = x1 - (x0 + x_dot0 * dt_);
                 fg[1 + y_start + t] = y1 - (y0 + y_dot0 * dt_);
                 fg[1 + z_start + t] = z1 - (z0 + z_dot0 * dt_);
-                fg[1 + x_dot_start + t] = x_dot1 - ((x_dot0 - 0.01 * x_dot0 + 9.81 * roll0) * dt_);
-                fg[1 + y_dot_start + t] = y_dot1 - ((y_dot0 - 0.01 * y_dot0 - 9.81 * pitch0) * dt_);
-                fg[1 + z_dot_start + t] = z_dot1 - ((z_dot0 - 0.01 * z_dot0 + thrust_command0) * dt_);
+                fg[1 + x_dot_start + t] = x_dot1 - (x_dot0 + (-0.01 * x_dot0 + 9.81 * roll0) * dt_);
+                fg[1 + y_dot_start + t] = y_dot1 - (y_dot0 + (-0.01 * y_dot0 - 9.81 * pitch0) * dt_);
+                fg[1 + z_dot_start + t] = z_dot1 - (z_dot0 + (-0.01 * z_dot0 + thrust_command0) * dt_);
                 fg[1 + roll_start + t] = roll1 - (roll0 + 20.0);
                 fg[1 + pitch_start + t] = pitch1 - (pitch0 + 20.0);               
             }
