@@ -258,5 +258,5 @@ class SwarmCommander
         /**
          * 
         */
-        Path modelPredictivePlanning(const Path& initial_path, ceres::Solver::Summary* summary);
+        Path modelPredictivePlanning(const Path& initial_path);
 };

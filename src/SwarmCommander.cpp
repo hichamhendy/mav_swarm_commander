@@ -423,7 +423,7 @@ Path SwarmCommander::resamplePath(const Path& initial_path, const double max_pat
     return resampled_path;
 }
 
-Path SwarmCommander::modelPredictivePlanning(const Path& initial_path, ceres::Solver::Summary* summary)
+Path SwarmCommander::modelPredictivePlanning(const Path& initial_path)
 {
     // The solver takes all the state variables and actuator
     // variables in a singular vector. Thus, we should to establish

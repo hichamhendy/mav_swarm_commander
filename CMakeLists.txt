@@ -26,6 +26,7 @@ find_package(
 
 ## System dependencies are found with CMake's conventions
 find_package(Ceres REQUIRED)
+# find_package(Ipopt REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 
@@ -78,7 +79,7 @@ add_executable(${PROJECT_NAME}_node src/nodes/swarm_commander_node.cpp)
 target_link_libraries(${PROJECT_NAME}_node
         ${catkin_LIBRARIES}
         ${PROJECT_NAME} 
-        # ipopt python2.7
+        ipopt # python2.7
         )
 add_dependencies(${PROJECT_NAME}_node
         ${catkin_EXPORTED_TARGETS}

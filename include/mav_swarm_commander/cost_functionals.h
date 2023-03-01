@@ -136,35 +136,29 @@ public:
 
 class FG_eval 
 {   private:
-        size_t N_;
-        double dt_; // connect with ros
-        Eigen::VectorXd coeffs_;
-        size_t x_start = 0;
-        size_t y_start = x_start + N_;
-        size_t z_start = y_start + N_;
-        size_t x_dot_start = z_start + N_;
-        size_t y_dot_start = x_dot_start + N_;
-        size_t z_dot_start = y_dot_start + N_;
-        size_t roll_start = z_dot_start + N_;
-        size_t pitch_start = roll_start + N_;
-        size_t roll_command_start = pitch_start + N_;
-        size_t pitch_command_start = roll_command_start + N_;
-        size_t thrust_command_start = pitch_command_start + N_ - 1;
+        const size_t N_;
+        const double dt_; // connect with ros
+        //Eigen::VectorXd coeffs_;
+        const size_t x_start = 0;
+        const size_t y_start = x_start + N_;
+        const size_t z_start = y_start + N_;
+        const size_t x_dot_start = z_start + N_;
+        const size_t y_dot_start = x_dot_start + N_;
+        const size_t z_dot_start = y_dot_start + N_;
+        const size_t roll_start = z_dot_start + N_;
+        const size_t pitch_start = roll_start + N_;
+        const size_t roll_command_start = pitch_start + N_;
+        const size_t pitch_command_start = roll_command_start + N_;
+        const size_t thrust_command_start = pitch_command_start + N_ - 1;
         const Eigen::Vector3d p1_ref_;
         const Eigen::Vector3d p2_ref_;
-        const double weight_;
 
     public:
         
         // Coefficients of the fitted polynomial.
-        FG_eval(VectorXd coeffs, size_t N, double dt, Eigen::Vector3d p1_ref, Eigen::Vector3d p1_ref) 
-        { 
-            this->coeffs = coeffs;
-            this->dt_ = dt;
-            this->N_ = N;
-            this->p1_ref_ = p1_ref;
-            this->p2_ref_ = p2_ref;
-        }
+        FG_eval(const size_t N, const double dt, const Eigen::Vector3d p1_ref, const Eigen::Vector3d p2_ref):
+            N_(N), dt_(dt), p1_ref_(p1_ref), p2_ref_(p2_ref)    
+        {}
 
         typedef CPPAD_TESTVECTOR(CppAD::AD<double>) ADvector;
         // `fg` is a vector containing the cost and constraints.
@@ -174,22 +168,22 @@ class FG_eval
             // The cost is stored is the first element of `fg`.
             // Any additions to the cost should be added to `fg[0]`.
             fg[0] = 0;
-            const Eigen::Vector3d vector_direction = (p2_ref - p1_ref).normalized();
-            const double segment_length = (p2_ref - p1_ref).norm();
+            const Eigen::Vector3d vector_direction = (p2_ref_ - p1_ref_).normalized();
+            const double segment_length = (p2_ref_ - p1_ref_).norm();
             const double step_length = segment_length / N_;
 
             // Reference State Cost
             for (int t = 0; t < N_; ++t)
             {
-                const Eigen::Vector3d inspection_pos = p1_ref + vector_direction * step_length * (t + 1);
+                const Eigen::Vector3d inspection_pos = p1_ref_ + vector_direction * step_length * (t); // should be (t) or (t + 1) ????
 
-                fg[0] += 0.5 * CppAD::pow(vars[x_start + t] - inspection_pos.x(), 2);
-                fg[0] += 0.5 * CppAD::pow(vars[y_start + t] - inspection_pos.y(), 2);
-                fg[0] += 0.5 * CppAD::pow(vars[z_start + t] - inspection_pos.z(), 2);
+                fg[0] += CppAD::pow(vars[x_start + t] - inspection_pos.x(), 2);
+                fg[0] += CppAD::pow(vars[y_start + t] - inspection_pos.y(), 2);
+                fg[0] += CppAD::pow(vars[z_start + t] - inspection_pos.z(), 2);
             }
 
             // Minimize the use of actuators.
-            for (int t = 0; t < N - 1; ++t) 
+            for (int t = 0; t < N_ - 1; ++t) 
             {
                 fg[0] += CppAD::pow(vars[roll_command_start + t], 2);
                 fg[0] += CppAD::pow(vars[pitch_command_start + t], 2);
@@ -206,12 +200,10 @@ class FG_eval
     
             
             // Setup Constraints
-            //
-            // NOTE: In this section you'll setup the model constraints.
+            // NOTE: In this section, setup the model constraints.
+
             // Initial constraints
-            //
-            // We add 1 to each of the starting indices due to cost being located at
-            // index 0 of `fg`.
+            // add 1 to each of the starting indices due to cost being located at index 0 of `fg`.
             // This bumps up the position of all the other values.
             fg[1 + x_start] = vars[x_start];
             fg[1 + y_start] = vars[y_start];
@@ -223,7 +215,7 @@ class FG_eval
             fg[1 + pitch_start] = vars[pitch_start];
             
             // The rest of the constraints
-            for (int t = 1; t < N; ++t) 
+            for (int t = 1; t < N_; ++t) // Note that we start the loop at t=1, because the values at t=0 are set to our initial state - those values are not calculated by the solver.
             {
                 // The state at time t+1 
                 CppAD::AD<double> x1 = vars[x_start + t];
@@ -236,23 +228,39 @@ class FG_eval
                 CppAD::AD<double> pitch1 = vars[pitch_start + t];
 
                 // The state at time t
-                CppAD::AD<double> x0 = vars[x_start - t];
-                CppAD::AD<double> y0 = vars[y_start - t];
-                CppAD::AD<double> z0 = vars[z_start - t];
-                CppAD::AD<double> x_dot0 = vars[x_dot_start - t];
-                CppAD::AD<double> y_dot0 = vars[y_dot_start - t];
-                CppAD::AD<double> z_dot0 = vars[z_dot_start - t];
-                CppAD::AD<double> roll0 = vars[roll_start - t];
-                CppAD::AD<double> pitch0 = vars[pitch_start - t];
+                CppAD::AD<double> x0 = vars[x_start + t - 1];
+                CppAD::AD<double> y0 = vars[y_start + t - 1];
+                CppAD::AD<double> z0 = vars[z_start + t - 1];
+                CppAD::AD<double> x_dot0 = vars[x_dot_start + t - 1];
+                CppAD::AD<double> y_dot0 = vars[y_dot_start + t - 1];
+                CppAD::AD<double> z_dot0 = vars[z_dot_start + t - 1];
+                CppAD::AD<double> roll0 = vars[roll_start + t - 1];
+                CppAD::AD<double> pitch0 = vars[pitch_start + t - 1];
 
                 // Only consider the actuation at time t
                 CppAD::AD<double> roll_command0 = vars[roll_command_start + t - 1];
                 CppAD::AD<double> pitch_command0 = vars[pitch_command_start + t - 1];
                 CppAD::AD<double> thrust_command0 = vars[thrust_command_start + t - 1];
 
+                // Here's `x` to get you started.
+                // The idea here is to constraint this value to be 0.
+                // fg[1 + x_start + t] = x1 - (x0 + (dt_/6) * ( + 2 * + 2 * + ));
+                // fg[1 + y_start + t] = y1 - (y0 + (dt_/6) * ( + 2 * + 2 * + ));
+                // fg[1 + z_start + t] = z1 - (z0 + (dt_/6) * ( + 2 * + 2 * + ));
+                // fg[1 + x_dot_start + t] = x_dot1 - (x_dot0 + (dt_/6) * ( + 2 * + 2 * + ));
+                // fg[1 + y_dot_start + t] = y_dot1 - (y_dot0 + (dt_/6) * ( + 2 * + 2 * + ));
+                // fg[1 + z_dot_start + t] = z_dot1 - (z_dot0 + (dt_/6) * ( + 2 * + 2 * + ));
+                // fg[1 + roll_start + t] = roll1 - (roll0 + (dt_/6) * ( + 2 * + 2 * + ));
+                // fg[1 + pitch_start + t] = pitch1 - (pitch0 + (dt_/6) * ( + 2 * + 2 * + ));   
 
-                // Note that we start the loop at t=1, because the values at t=0 are set to our initial state - those values are not calculated by the solver.
-
+                fg[1 + x_start + t] = x1 - (x0 + x_dot0 * dt_);
+                fg[1 + y_start + t] = y1 - (y0 + y_dot0 * dt_);
+                fg[1 + z_start + t] = z1 - (z0 + z_dot0 * dt_);
+                fg[1 + x_dot_start + t] = x_dot1 - ((x_dot0 - 0.01 * x_dot0 + 9.81 * roll0) * dt_);
+                fg[1 + y_dot_start + t] = y_dot1 - ((y_dot0 - 0.01 * y_dot0 - 9.81 * pitch0) * dt_);
+                fg[1 + z_dot_start + t] = z_dot1 - ((z_dot0 - 0.01 * z_dot0 + thrust_command0) * dt_);
+                fg[1 + roll_start + t] = roll1 - (roll0 + 20.0);
+                fg[1 + pitch_start + t] = pitch1 - (pitch0 + 20.0);               
             }
         }
 };
