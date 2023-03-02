@@ -25,6 +25,9 @@
 
 #include "mav_swarm_commander/path.h"
 #include "mav_swarm_commander/cost_functionals.h"
+#include "mav_swarm_commander/state_space_ODE.h"
+
+
 #include "esdf_map/signed_distance_field.h"
 #include <mav_commander/mav_commander.h>
 
@@ -259,4 +262,10 @@ class SwarmCommander
          * 
         */
         Path modelPredictivePlanning(const Path& initial_path);
+
+        /**
+         * @brief 
+         * 
+         */
+        Eigen::Vector3d ToEulerAngles(const Eigen::Quaterniond q);      
 };
