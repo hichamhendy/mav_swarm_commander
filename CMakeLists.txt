@@ -22,6 +22,7 @@ find_package(
         mav_commander
         std_msgs
         libmavconn
+        nlopt
         )
 
 ## System dependencies are found with CMake's conventions
@@ -66,6 +67,7 @@ add_library(${PROJECT_NAME}
         src/SwarmCommander.cpp
         src/line_segment.cpp
         src/path.cpp
+        src/SwarmCommanderUtility.cpp
 )
 
 
