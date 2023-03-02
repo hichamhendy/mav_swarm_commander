@@ -371,6 +371,7 @@ void SwarmCommander::reconfigure(mav_swarm_commander::SwarmCommanderConfig& conf
 	config_ = config;
 }
 
+
 void SwarmCommander::commandTrajectory(const Path& path, const double yaw_setpoint_rad)
 {
     if (path.points_.size() < 2)
@@ -388,21 +389,6 @@ void SwarmCommander::commandTrajectory(const Path& path, const double yaw_setpoi
 
 }
 
-
-void SwarmCommander::publish(const Path& path, const Eigen::Quaterniond& quat_orientation_setpoint)
-{
-    geometry_msgs::PoseStamped PoseStamped_position_setpoint;
-    PoseStamped_position_setpoint.header.stamp = ros::Time::now();
-    PoseStamped_position_setpoint.header.frame_id = "odom";
-    PoseStamped_position_setpoint.pose.position.x = path.points_[1].x();
-    PoseStamped_position_setpoint.pose.position.y = path.points_[1].y();
-    PoseStamped_position_setpoint.pose.position.z = path.points_[1].z();
-    PoseStamped_position_setpoint.pose.orientation.x = quat_orientation_setpoint.x();
-    PoseStamped_position_setpoint.pose.orientation.y = quat_orientation_setpoint.y();
-    PoseStamped_position_setpoint.pose.orientation.z = quat_orientation_setpoint.z();
-    PoseStamped_position_setpoint.pose.orientation.w = quat_orientation_setpoint.w();
-    offboard_mode_position_setpoint_marker_pub_.publish(PoseStamped_position_setpoint);
-}
 
 Path SwarmCommander::resamplePath(const Path& initial_path, const double max_path_length)
 {
@@ -423,9 +409,57 @@ Path SwarmCommander::resamplePath(const Path& initial_path, const double max_pat
     return resampled_path;
 }
 
+
 Path SwarmCommander::modelPredictivePlanning(const Path& initial_path)
 {
     // The solver takes all the state variables and actuator
     // variables in a singular vector. Thus, we should to establish
     // when one variable starts and another ends to make our lifes easier.
+
+
+
+
 }
+
+
+
+
+// void SwarmCommander::optimize(const Path& initial_path)
+// {
+//     Path optimized_control_points = initial_path;
+//     // bool optimize_time_ = cost_function_ & MINTIME; // time optimization ?? 
+//     // variable_num_ = optimize_time_ ? dim_ * 3 + 1 : dim_ * 3;
+
+//     ocp ocp_cost;
+//     nlopt::opt optimizer = nlopt::opt(nlopt::GN_ISRES, 3);
+//     optimizer.set_min_objective(ocp_cost.costFunction, this);
+//     optimizer.set_maxeval(config_.max_num_iterations);
+//     optimizer.set_maxtime(config_.max_iteration_time);
+//     optimizer.set_xtol_rel(1e-5);
+
+
+//     vector<double> q(3);
+
+
+//     try 
+//     {
+//         double final_cost;
+//         nlopt::result result = opt.optimize(q, final_cost);
+//     } 
+//     catch (std::exception& e) 
+//     {
+//         std::cout << e.what() << endl;
+//     }
+
+//     // Eigen::Vector3d bmin, bmax;
+
+// }
+
+// double SwarmCommander::costFunction(const std::vector<double>& x, std::vector<double>& grad,
+//                                       void* func_data)
+// {
+
+//     double cost;
+
+//     return cost;
+// }
