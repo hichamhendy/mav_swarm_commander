@@ -19,9 +19,10 @@
 #include <cppad/cppad.hpp>
 #include <cppad/ipopt/solve.hpp>
 
-#include <GeographicLib/LocalCartesian.hpp>
+// #include <GeographicLib/LocalCartesian.hpp>
 
 #include <thread>
+#include <cmath>
 
 #include "mav_swarm_commander/path.h"
 #include "mav_swarm_commander/cost_functionals.h"
@@ -73,7 +74,9 @@ class SwarmCommander
 
         // Current state
         Eigen::Vector3d current_copter_position_;
+        Eigen::Vector3d current_copter_velocity_;
         Eigen::Quaterniond current_copter_orientation_;
+        Eigen::Vector3d current_copter_euler_orientation_;
 
         /** Service and Action Servers
          * @note In General:
@@ -109,6 +112,7 @@ class SwarmCommander
         ros::Publisher path_setpoint_pub_;
         ros::Publisher offboard_mode_position_setpoint_marker_pub_;
         ros::ServiceClient topological_planning_service_client_; // the client is temporary till I integrate the planner
+        ros::Subscriber velocity_sub_;
 
         // Visualization Parameters
         std_msgs::ColorRGBA color_initial_path_;
@@ -130,6 +134,7 @@ class SwarmCommander
         mutable std::mutex current_safe_path_mutex_;
         std::string px4_flight_mode_;
         boost::optional<Eigen::Vector3d> loiter_position_;
+        boost::optional<Eigen::Vector3d> loiter_velocity_;
         boost::optional<Eigen::Quaterniond> loiter_orientation_;
         boost::optional<manager_msgs::OffboardPathSetpoint> path_setpoint_msg_;
 
@@ -138,6 +143,26 @@ class SwarmCommander
         const std::string kStreamPrefix = "[Swarm Commanding]: ";
         
         ros::Timer publish_position_setpoint_timer_; // Setpoint
+
+        size_t N = 6;
+        double dt = 0.05;
+        const size_t x_start = 0;
+        const size_t y_start = x_start + N;
+        const size_t z_start = y_start + N;
+        const size_t x_dot_start = z_start + N;
+        const size_t y_dot_start = x_dot_start + N;
+        const size_t z_dot_start = y_dot_start + N;
+        const size_t roll_start = z_dot_start + N;
+        const size_t pitch_start = roll_start + N;
+        const size_t roll_command_start = pitch_start + N;
+        const size_t pitch_command_start = roll_command_start + N;
+        const size_t thrust_command_start = pitch_command_start + N - 1;
+
+        /**
+         * @brief 
+         * 
+         */
+        void velocityCallback(const geometry_msgs::TwistStamped::ConstPtr &msg);
 
         /**
          * @brief The function uses a server 
@@ -259,6 +284,9 @@ class SwarmCommander
         void land();
 
         /**
+         * @brief solver takes all the state variables and actuator
+         * variables in a singular vector. Thus, we should to establish
+         * when one variable starts and another ends to make our lifes easier.
          * 
         */
         Path modelPredictivePlanning(const Path& initial_path);
@@ -267,5 +295,11 @@ class SwarmCommander
          * @brief 
          * 
          */
-        Eigen::Vector3d ToEulerAngles(const Eigen::Quaterniond q);      
+        Eigen::Vector3d ToEulerAngles(const Eigen::Quaterniond q);
+
+        /**
+         * @brief transfrom to
+         * 
+         */
+        double deg2rad(double deg);
 };

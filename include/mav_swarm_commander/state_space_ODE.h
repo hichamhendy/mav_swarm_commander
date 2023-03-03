@@ -8,6 +8,9 @@ struct SystemConstants
     double psi_gain = 2.8;
     double roll_gain = 20;
     double pitch_gain = 20;
+    double maxmin_angle = 0.7853981633974483;
+    double max_thrust = m * g[3] * 1.5;
+    double min_thrust = m * g[3] * 0.5;
 };
 
 /* 
@@ -85,5 +88,21 @@ class RungeKutta
     Eigen::VectorXd propagate()
     {
         return (x1_ + (dt_/6.0) * (k1 + 2 * k2 + 2 * k3 + k4));
+    }
+};
+
+class ExplicitEuler
+{
+    Eigen::VectorXd x1_;
+    Eigen::VectorXd u1_;
+    double dt_;
+    NonlinearStateSpace_ODE ode1_;
+
+    ExplicitEuler(const Eigen::VectorXd& x, const Eigen::VectorXd& u, double& dt) : x1_(x), u1_(u), ode1_(x, u), dt_(dt)
+    {}
+
+    Eigen::VectorXd propagate()
+    {
+        return (x1_ + (dt_) * ode1_.systemDynamics());
     }
 };

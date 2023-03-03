@@ -135,6 +135,8 @@ public:
     const double weight_;
 };
 
+
+
 class FG_eval 
 {   private:
         const size_t N_;

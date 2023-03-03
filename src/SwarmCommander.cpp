@@ -18,6 +18,7 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
     final_path_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/final_path", 1);
     path_setpoint_pub_ = nh_private_.advertise<manager_msgs::OffboardPathSetpoint>("/path_setpoint", 1);
     offboard_mode_position_setpoint_marker_pub_ = nh_private_.advertise<geometry_msgs::PoseStamped>("/offboard_position_setpoint", 1);
+    velocity_sub_ = nh_private_.subscribe<geometry_msgs::TwistStamped>("/mavros/local_position/velocity_local", 1, boost::bind(&SwarmCommander::velocityCallback, this, _1));
 
     color_initial_path_.r = 1.0;
     color_initial_path_.g = 0.5;
@@ -129,31 +130,6 @@ void SwarmCommander::land()
     ROS_INFO_STREAM(kStreamPrefix << "Shutdown successfull.");
 
 	ros::shutdown();
-}
-
-bool SwarmCommander::updateCopterPosition()
-{
-    try
-    {
-        const geometry_msgs::TransformStamped transform_stamped = tf_buffer_.lookupTransform("odom", "base_link", ros::Time(0));
-        current_copter_position_ = {transform_stamped.transform.translation.x, transform_stamped.transform.translation.y,
-                                    transform_stamped.transform.translation.z};
-        current_copter_orientation_ = {transform_stamped.transform.rotation.w, transform_stamped.transform.rotation.x,
-                                    transform_stamped.transform.rotation.y, transform_stamped.transform.rotation.z};
-
-    if (!loiter_position_ || !loiter_orientation_)
-    {
-        loiter_position_ = current_copter_position_;
-        loiter_orientation_ = current_copter_orientation_;
-    }
-
-        return true;
-    }
-    catch (tf2::TransformException& ex)
-    {
-        ROS_ERROR_STREAM(kStreamPrefix << "Could not get the tf transform odom -> base_link");
-        return false;
-    }
 }
 
 void SwarmCommander::goalCallback()
@@ -412,13 +388,133 @@ Path SwarmCommander::resamplePath(const Path& initial_path, const double max_pat
 
 Path SwarmCommander::modelPredictivePlanning(const Path& initial_path)
 {
-    // The solver takes all the state variables and actuator
-    // variables in a singular vector. Thus, we should to establish
-    // when one variable starts and another ends to make our lifes easier.
+    SystemConstants sys_constants;
+    Path optimized_path = initial_path;
+
+    for (int i = 0; i < optimized_path.points_.size() - N; i++)
+    {
+        typedef CPPAD_TESTVECTOR(double) Dvector; // CppAD::AD<double>
+
+        const Eigen::Vector3d p1 = optimized_path.points_[i];
+        const Eigen::Vector3d p2 = optimized_path.points_[i + 1];
+
+        // updateCopterPosition doooooooooooooooooooooooooooooo
+        double x_init = current_copter_position_.x();
+        double y_init = current_copter_position_.y();
+        double z_init = current_copter_position_.z();
+        double x_dot_init = current_copter_velocity_.x();
+        double y_dot_init = current_copter_velocity_.y();
+        double z_dot_init = current_copter_velocity_.z();
+        double roll_init = current_copter_euler_orientation_.x();
+        double pitch_init = current_copter_euler_orientation_.y();
+        double yaw_init = current_copter_euler_orientation_.z();
+
+        // number of independent variables 8 states and 3 inputs
+        size_t n_vars = N * 8 + (N - 1) * 3;
+
+        // Number of constraints
+        size_t n_constraints = N * 8;
+
+        // Initial value of the independent variables.
+        // Should be 0 except for the initial values.
+        Dvector vars(n_vars);
+        for (int i = 0; i < n_vars; ++i) 
+        {
+            vars[i] = 0.0;
+        }
+
+        vars[x_start] = x_init;
+        vars[y_start] = y_init;
+        vars[z_start] = z_init;
+        vars[x_dot_start] = x_dot_init;
+        vars[y_dot_start] = y_dot_init;
+        vars[z_dot_start] = z_dot_init;
+        vars[roll_command_start] = roll_init;
+        vars[pitch_command_start] = pitch_init;
+
+        // Lower and upper limits for x
+        Dvector vars_lowerbound(n_vars);
+        Dvector vars_upperbound(n_vars);
+
+        // Set all non-actuators upper and lowerlimits
+        // to the max negative and positive values.
+        for (int i = 0; i < roll_command_start; ++i) 
+        {
+            vars_lowerbound[i] = -1.0e19;
+            vars_upperbound[i] = 1.0e19;
+        }
+
+        for (int i = roll_command_start; i < thrust_command_start; ++i) 
+        {
+            vars_lowerbound[i] = - sys_constants.maxmin_angle;
+            vars_upperbound[i] =   sys_constants.maxmin_angle;
+        }
+
+        for (int i = thrust_command_start; i < n_vars; i++)
+        {
+            vars_lowerbound[i] = sys_constants.min_thrust;
+            vars_upperbound[i] = - sys_constants.max_thrust;
+        }
 
 
+        // Lower and upper limits for constraints
+        // All of these should be 0 except the initial
+        // state indices.
+        Dvector constraints_lowerbound(n_constraints);
+        Dvector constraints_upperbound(n_constraints);
+        for (int i = 0; i < n_constraints; ++i) 
+        {
+            constraints_lowerbound[i] = 0;
+            constraints_upperbound[i] = 0;
+        }
+
+        constraints_lowerbound[x_start] = x_init;
+        constraints_lowerbound[y_start] = y_init;
+        constraints_lowerbound[z_start] = z_init;
+        constraints_lowerbound[x_dot_start] = x_dot_init;
+        constraints_lowerbound[y_dot_start] = y_dot_init;
+        constraints_lowerbound[z_dot_start] = z_dot_init;
+        constraints_lowerbound[roll_start] = roll_init;
+        constraints_lowerbound[pitch_start] = pitch_init;
 
 
+        constraints_upperbound[x_start] = x_init;
+        constraints_upperbound[y_start] = y_init;
+        constraints_upperbound[z_start] = z_init;
+        constraints_upperbound[x_dot_start] = x_dot_init;
+        constraints_upperbound[y_dot_start] = y_dot_init;
+        constraints_upperbound[z_dot_start] = z_dot_init;
+        constraints_upperbound[roll_start] = roll_init;
+        constraints_upperbound[pitch_start] = pitch_init;
+
+
+        // pass
+        FG_eval fg_eval(N, dt, p1,  p2);
+
+        // options
+        std::string options;
+        options += "Integer print_level  0\n";
+        options += "Sparse  true        forward\n";
+        options += "Sparse  true        reverse\n";
+
+        // place to return solution
+        CppAD::ipopt::solve_result<Dvector> solution;
+
+        // solve the problem
+        CppAD::ipopt::solve<Dvector, FG_eval>(
+            options, vars, vars_lowerbound, vars_upperbound, constraints_lowerbound,
+            constraints_upperbound, fg_eval, solution);
+
+        //
+        // Check some of the solution values
+        //
+        bool ok = true;
+        ok &= solution.status == CppAD::ipopt::solve_result<Dvector>::success;
+
+        auto cost = solution.obj_value;
+        std::cout << "Cost " << cost << std::endl;
+    }
+    return optimized_path;
 }
 
 
