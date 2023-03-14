@@ -26,5 +26,7 @@
   <depend>backward_ros</depend>
   <depend>manager_msgs</depend>
   <depend>esdf_map</depend>
+  <!-- depend>ifopt</depend-->
+  <depend>ipopt</depend>
 
 </package>

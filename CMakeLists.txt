@@ -8,6 +8,10 @@ set(CMAKE_CXX_FLAGS "-std=c++14")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -pthread")
 # add_compile_options(-std=c++11)
 
+
+option(BUILD_EXAMPLE "Whether or not building the CppAD & Ipopt example" ON) 
+
+
 find_package(
         catkin REQUIRED COMPONENTS
         roscpp
@@ -28,7 +32,7 @@ find_package(
 
 ## System dependencies are found with CMake's conventions
 find_package(Ceres REQUIRED)
-# find_package(Ipopt REQUIRED)
+# find_package(ifopt)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 
@@ -82,8 +86,19 @@ add_executable(${PROJECT_NAME}_node src/nodes/swarm_commander_node.cpp)
 target_link_libraries(${PROJECT_NAME}_node
         ${catkin_LIBRARIES}
         ${PROJECT_NAME} 
-        ipopt # python2.7
+        ipopt python2.7
+        # ifopt::ifopt_ipopt
         )
 add_dependencies(${PROJECT_NAME}_node
         ${catkin_EXPORTED_TARGETS}
         )
+
+
+
+if(BUILD_EXAMPLE)
+    ADD_EXECUTABLE( CppAD_started example/CppAD_started.cpp )
+    TARGET_LINK_LIBRARIES(CppAD_started)
+    
+    ADD_EXECUTABLE( CppAD_Ipopt example/CppAD_Ipopt.cpp )
+    TARGET_LINK_LIBRARIES(CppAD_Ipopt ipopt)
+endif(BUILD_EXAMPLE)
