@@ -9,8 +9,8 @@ struct SystemConstants
     double roll_gain = 20;
     double pitch_gain = 20;
     double maxmin_angle = 0.7853981633974483;
-    double max_thrust = m * g[3] * 1.5;
-    double min_thrust = m * g[3] * 0.5;
+    double max_thrust = m * g[2] * 1.5;
+    double min_thrust = m * g[2] * 0.5;
 };
 
 /* 
