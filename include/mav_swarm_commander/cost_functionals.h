@@ -136,38 +136,40 @@ public:
 };
 
 
-
+ 
 class FG_eval 
-{   private:
-        const size_t N_;
-        const double dt_; // connect with ros
-        //Eigen::VectorXd coeffs_;
-        const size_t x_start = 0;
-        const size_t y_start = x_start + N_;
-        const size_t z_start = y_start + N_;
-        const size_t x_dot_start = z_start + N_;
-        const size_t y_dot_start = x_dot_start + N_;
-        const size_t z_dot_start = y_dot_start + N_;
-        const size_t roll_start = z_dot_start + N_;
-        const size_t pitch_start = roll_start + N_;
-        const size_t roll_command_start = pitch_start + N_;
-        const size_t pitch_command_start = roll_command_start + N_;
-        const size_t thrust_command_start = pitch_command_start + N_ - 1;
+{   
+    public:
+        const size_t N_ = 6;
+        const double dt_ = 0.05; // connect with ros
+        size_t x_start, y_start, z_start, x_dot_start, y_dot_start, z_dot_start, roll_start, pitch_start, roll_command_start, pitch_command_start, thrust_command_start;
         const Eigen::Vector3d p1_ref_;
         const Eigen::Vector3d p2_ref_;
 
-    public:
-        
+        typedef CPPAD_TESTVECTOR(CppAD::AD<double>) ADvector;
         // Coefficients of the fitted polynomial.
         FG_eval(const size_t N, const double dt, const Eigen::Vector3d p1_ref, const Eigen::Vector3d p2_ref):
             N_(N), dt_(dt), p1_ref_(p1_ref), p2_ref_(p2_ref)    
-        {}
+        {
+            x_start = 0;
+            y_start = x_start + N_;
+            z_start = y_start + N_;
+            x_dot_start = z_start + N_;
+            y_dot_start = x_dot_start + N_;
+            z_dot_start = y_dot_start + N_;
+            roll_start =  z_dot_start + N_;
+            pitch_start = roll_start + N_;
+            roll_command_start = pitch_start + N_;
+            pitch_command_start = roll_command_start + N_ - 1;
+            thrust_command_start = pitch_command_start + N_ - 1;
+        }
 
-        typedef CPPAD_TESTVECTOR(CppAD::AD<double>) ADvector;
+        
         // `fg` is a vector containing the cost and constraints.
         // `vars` is a vector containing the variable values (state & actuators).
         void operator()(ADvector& fg, const ADvector& vars) 
         {
+            assert( vars.size()  == (N_ * 8 + (N_ - 1) * 3) );
             // The cost is stored is the first element of `fg`.
             // Any additions to the cost should be added to `fg[0]`.
             fg[0] = 0;
@@ -176,7 +178,7 @@ class FG_eval
             const double step_length = segment_length / N_;
 
             // Reference State Cost
-            for (int t = 0; t < N_; ++t)
+            for (size_t t = 0; t < N_; ++t)
             {
                 const Eigen::Vector3d inspection_pos = p1_ref_ + vector_direction * step_length * (t); // should be (t) or (t + 1) ????
 
@@ -184,24 +186,24 @@ class FG_eval
                 fg[0] += CppAD::pow(vars[y_start + t] - inspection_pos.y(), 2);
                 fg[0] += CppAD::pow(vars[z_start + t] - inspection_pos.z(), 2);
             }
-
+ 
             // Minimize the use of actuators.
-            for (int t = 0; t < N_ - 1; ++t) 
+            for (size_t t = 0; t < N_ - 1; ++t) 
             {
                 fg[0] += CppAD::pow(vars[roll_command_start + t], 2);
                 fg[0] += CppAD::pow(vars[pitch_command_start + t], 2);
-                fg[0] += CppAD::pow(vars[thrust_command_start + t], 2);
+                fg[0] += CppAD::pow(vars[thrust_command_start + t], 2); /// 
             }
 
             // Minimize the value gap between sequential actuations to avoid overexcertion which can't be anyway implemented by PX4.
-            for (int t = 0; t < N_ - 2; ++t) 
+            for (size_t t = 0; t < N_ - 2; ++t) 
             {
                 fg[0] += CppAD::pow(vars[roll_command_start + t + 1] - vars[roll_command_start + t], 2);
                 fg[0] += CppAD::pow(vars[pitch_command_start + t + 1] - vars[pitch_command_start + t], 2);
                 fg[0] += CppAD::pow(vars[thrust_command_start + t + 1] - vars[thrust_command_start + t], 2);
             }
     
-            
+             
             // Setup Constraints
             // NOTE: In this section, setup the model constraints.
 
@@ -250,45 +252,101 @@ class FG_eval
                 fg[1 + z_start + t] = z1 - (z0 + z_dot0 * dt_);
                 fg[1 + x_dot_start + t] = x_dot1 - (x_dot0 + (-0.01 * x_dot0 + 9.81 * roll0) * dt_);
                 fg[1 + y_dot_start + t] = y_dot1 - (y_dot0 + (-0.01 * y_dot0 - 9.81 * pitch0) * dt_);
-                fg[1 + z_dot_start + t] = z_dot1 - (z_dot0 + (-0.01 * z_dot0 + thrust_command0) * dt_);
-                fg[1 + roll_start + t] = roll1 - (roll0 + 20.0);
-                fg[1 + pitch_start + t] = pitch1 - (pitch0 + 20.0);               
+                fg[1 + z_dot_start + t] = z_dot1 - (z_dot0 + (thrust_command0) * dt_);
+                fg[1 + roll_start + t] = roll1 - (-roll0 + roll_command0);
+                fg[1 + pitch_start + t] = pitch1 - (-pitch0 + pitch_command0);               
             }
         }
 };
 
 
+// class ocp
+// {
 
-class ocp
-{
-public:
-    /**
-     * @brief Construct a new ocp object
-     * 
-     */
-    ocp()
-    {
+//     public:
+//         /**
+//          * @brief Construct a new ocp object
+//          * 
+//          */
+//         ocp()N_(N), dt_(dt), p1_ref_(p1_ref), p2_ref_(p2_ref)  
+//         {
 
-    }
+//         }
 
-    /**
-     * @brief Destroy the ocp object
-     * 
-     */
-    ~ocp()
-    {
-        
-    }
+//         /**
+//          * @brief Destroy the ocp object
+//          * 
+//          */
+//         ~ocp()
+//         {
+            
+//         }
 
-    static double costFunction(const std::vector<double>& x, std::vector<double>& grad,
-                                      void* func_data)
-    {
+//         double costFunction(const std::vector<double>& vars, std::vector<double>& grad,
+//                                         void* func_data)
+//         {
 
-        double cost;
+//             double cost;
+//             const Eigen::Vector3d vector_direction = (p2_ref_ - p1_ref_).normalized();
+//             const double segment_length = (p2_ref_ - p1_ref_).norm();
+//             const double step_length = segment_length / N_;
 
-        return cost;
-    }
+//             if (!grad.empty()) 
+//             {
+//                 // grad[0] = 0.0;
+//                 // grad[1] = 0.5 / sqrt(x[1]);
+//             }
 
-    private:
-    /* data */
-};
+//             // Reference State Cost
+//             for (size_t t = 0; t < N_; ++t)
+//             {
+//                 const Eigen::Vector3d inspection_pos = p1_ref_ + vector_direction * step_length * (t); // should be (t) or (t + 1) ????
+
+//                 cost += pow(vars[x_start + t] - inspection_pos.x(), 2);
+//                 cost += pow(vars[y_start + t] - inspection_pos.y(), 2);
+//                 cost += pow(vars[z_start + t] - inspection_pos.z(), 2);
+//             }
+
+//                 // Minimize the use of actuators.
+//             for (size_t t = 0; t < N_ - 1; ++t) 
+//             {
+//                 cost += pow(vars[roll_command_start + t], 2);
+//                 cost += pow(vars[pitch_command_start + t], 2);
+//                 cost += pow(vars[thrust_command_start + t], 2); /// 
+//             }
+
+//                 // Minimize the value gap between sequential actuations to avoid overexcertion which can't be anyway implemented by PX4.
+//             for (size_t t = 0; t < N_ - 2; ++t) 
+//             {
+//                 cost += pow(vars[roll_command_start + t + 1] - vars[roll_command_start + t], 2);
+//                 cost += pow(vars[pitch_command_start + t + 1] - vars[pitch_command_start + t], 2);
+//                 cost += pow(vars[thrust_command_start + t + 1] - vars[thrust_command_start + t], 2);
+//             }
+
+//             return cost;
+//         }
+
+
+//         double myconstraint(unsigned n, const double *x, double *grad, void *data)
+//         {
+            
+//         }
+
+//     private:
+//         private:
+//         const size_t N_ = 6;
+//         const double dt_ = 0.05; // connect with ros
+//         const size_t x_start = 0;
+//         const size_t y_start = x_start + N_;
+//         const size_t z_start = y_start + N_;
+//         const size_t x_dot_start = z_start + N_;
+//         const size_t y_dot_start = x_dot_start + N_;
+//         const size_t z_dot_start = y_dot_start + N_;
+//         const size_t roll_start =  z_dot_start + N_;
+//         const size_t pitch_start = roll_start + N_;
+//         const size_t roll_command_start = pitch_start + N_;
+//         const size_t pitch_command_start = roll_command_start + N_ - 1;
+//         const size_t thrust_command_start = pitch_command_start + N_ - 1;
+//         const Eigen::Vector3d p1_ref_;
+//         const Eigen::Vector3d p2_ref_;
+// };
