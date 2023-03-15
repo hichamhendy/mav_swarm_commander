@@ -9,7 +9,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g -pthread")
 # add_compile_options(-std=c++11)
 
 
-option(BUILD_EXAMPLE "Whether or not building the CppAD & Ipopt example" ON) 
+option(BUILD_EXAMPLE "Whether or not building the CppAD & Ipopt example" OFF) 
 
 
 find_package(

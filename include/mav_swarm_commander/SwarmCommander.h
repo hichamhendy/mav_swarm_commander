@@ -34,6 +34,9 @@
 
 #include <future> // to name the type of the mutex used
 
+
+
+
 typedef actionlib::SimpleActionServer<manager_msgs::FlyToAction> FlyToServer; // https://docs.ros.org/en/diamondback/api/actionlib/html/classactionlib_1_1SimpleActionServer.html
 
 
@@ -113,6 +116,7 @@ class SwarmCommander
         ros::Publisher offboard_mode_position_setpoint_marker_pub_;
         ros::ServiceClient topological_planning_service_client_; // the client is temporary till I integrate the planner
         ros::Subscriber velocity_sub_;
+        ros::Subscriber goal_sub_;
 
         // Visualization Parameters
         std_msgs::ColorRGBA color_initial_path_;
@@ -138,25 +142,26 @@ class SwarmCommander
         boost::optional<Eigen::Quaterniond> loiter_orientation_;
         boost::optional<manager_msgs::OffboardPathSetpoint> path_setpoint_msg_;
 
-        std::thread run_thread;
+        std::thread run_thread, goal_reached_thread;
 
         const std::string kStreamPrefix = "[Swarm Commanding]: ";
         
         ros::Timer publish_position_setpoint_timer_; // Setpoint
 
+        //
         size_t N = 6;
+        size_t x_start = 0;
+        size_t y_start = x_start + N;
+        size_t psi_start = y_start + N;
+        size_t v_start = psi_start + N;
+        size_t cte_start = v_start + N;
+        size_t epsi_start = cte_start + N;
+        size_t delta_start = epsi_start + N;
+        size_t a_start = delta_start + N - 1;
         double dt = 0.05;
-        const size_t x_start = 0;
-        const size_t y_start = x_start + N;
-        const size_t z_start = y_start + N;
-        const size_t x_dot_start = z_start + N;
-        const size_t y_dot_start = x_dot_start + N;
-        const size_t z_dot_start = y_dot_start + N;
-        const size_t roll_start = z_dot_start + N;
-        const size_t pitch_start = roll_start + N;
-        const size_t roll_command_start = pitch_start + N;
-        const size_t pitch_command_start = roll_command_start + N;
-        const size_t thrust_command_start = pitch_command_start + N - 1;
+        const double Lf = 2.67;
+        double ref_v = 40;
+        //
 
         /**
          * @brief 
@@ -287,7 +292,7 @@ class SwarmCommander
          * @brief solver takes all the state variables and actuator
          * variables in a singular vector. Thus, we should to establish
          * when one variable starts and another ends to make our lifes easier.
-         * 
+         * @note https://coin-or.github.io/CppAD/doc/ipopt_solve_get_started.cpp.htm
         */
         Path modelPredictivePlanning(const Path& initial_path);
 
@@ -302,4 +307,25 @@ class SwarmCommander
          * 
          */
         double deg2rad(double deg);
+    
+        /**
+         * @brief 
+         * 
+         */
+        Eigen::VectorXd polyFit(const Eigen::VectorXd &xvals, const Eigen::VectorXd &yvals, int order);
+
+        /**
+         * @brief 
+         * 
+         * @param coeffs 
+         * @param x 
+         * @return double 
+         */
+        double polyEval(const Eigen::VectorXd &coeffs, double x);
+
+        /**
+         * @brief 
+         * 
+         */
+        void goalReached();
 };

@@ -41,9 +41,13 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
 
     dynamic_reconfigure_server_.setCallback(boost::bind(&SwarmCommander::reconfigure, this, _1, _2));
 
-    trajectory_planning_timer_ = nh_private_.createTimer(ros::Duration(1.0), boost::bind(&SwarmCommander::globalPlanner, this)); // in case the planner applied a horizon shift
+    // trajectory_planning_timer_ = nh_private_.createTimer(ros::Duration(1.0), boost::bind(&SwarmCommander::globalPlanner, this)); // in case the planner applied a horizon shift
 
     run_thread = std::thread(&SwarmCommander::run, this);
+    // goal_reached_thread = std::thread(&SwarmCommander::goalReached, this);
+
+    // ros::AsyncSpinner spinner(2); // Use multi threads
+    // spinner.start();
 
     ROS_INFO_STREAM("==================================================================================");
     ROS_INFO_STREAM("SwarmCommander has been successfully contructed");
@@ -55,6 +59,10 @@ SwarmCommander::~SwarmCommander()
     if(run_thread.joinable())
 		run_thread.join();
 
+    if(goal_reached_thread.joinable())
+		goal_reached_thread.join();
+
+    // ros::waitForShutdown();
     ros::shutdown();
 }
 
@@ -97,6 +105,32 @@ void SwarmCommander::run()
 
 	land();
 }
+
+
+void SwarmCommander::goalReached()
+{
+	ros::Rate run_freq(1/dt);
+	while(ros::ok()) 
+	{
+           // Try to get the current copter position
+        if (!updateCopterPosition())
+        {
+            abortCurrentGoal();
+        }
+
+        const double dist_to_destination = (current_copter_position_ - destination_point_).norm();
+        if (dist_to_destination < config_.goal_vicinity)
+        {
+            ROS_INFO_STREAM(kStreamPrefix << "Distance to destination in meter = " << dist_to_destination);
+            ROS_INFO_STREAM(kStreamPrefix << "Goal Reaching Thread: Drone is located in goal vicinity; Initiating a planning process ain't needed");
+            finishCurrentGoal();
+            ROS_INFO_STREAM(kStreamPrefix << "==================================================================================");
+            return;
+        }
+		run_freq.sleep();
+	}
+}
+
 
 void SwarmCommander::land()
 {
@@ -194,7 +228,7 @@ void SwarmCommander::abortCurrentGoal()
     current_safe_path_.points_.clear();
 
     initial_path_pub_.publish(Path().visualizationMarkerMsg(color_initial_path_));
-    // final_path_pub_.publish(Path().visualizationMarkerMsg(color_final_path_));
+    final_path_pub_.publish(Path().visualizationMarkerMsg(color_final_path_));
 }
 
 void SwarmCommander::globalPlanner()
@@ -209,6 +243,7 @@ void SwarmCommander::globalPlanner()
     }
 
     ROS_DEBUG_STREAM("current_copter_position_: " << current_copter_position_.transpose());
+    ROS_DEBUG_STREAM("current_copter_orientation_: " << current_copter_euler_orientation_.transpose());
     ROS_INFO_STREAM(kStreamPrefix << "Fly To Server activity is on: " << flyto_server_.isActive());
 
     if (!flyto_server_.isActive())
@@ -240,9 +275,15 @@ void SwarmCommander::globalPlanner()
 
     current_path_ = resamplePath(initial_path_);
 
-    ceres::Solver::Summary ceres_solver_summary;
-    current_path_ = trajectoryPlanning(current_path_, &ceres_solver_summary);
-    ROS_DEBUG_STREAM("Solver Summary" << ceres_solver_summary.FullReport());
+
+    // // Ceres Solution Non linear least square
+    // ceres::Solver::Summary ceres_solver_summary;
+    // current_path_ = trajectoryPlanning(current_path_, &ceres_solver_summary);
+    // ROS_DEBUG_STREAM("Solver Summary" << ceres_solver_summary.FullReport());
+
+    // Model predictive planning
+    current_path_ = modelPredictivePlanning(current_path_);
+
 
     ROS_DEBUG_STREAM("optimized path:");
     for (const auto& p : current_path_.points_)
@@ -252,12 +293,12 @@ void SwarmCommander::globalPlanner()
 
     current_path_pub_.publish(current_path_.visualizationMarkerMsg(color_current_path_));
 
-    ros::Rate setpoint_loop_rate(10);
-    for(std::size_t i = 0; i < current_path_.points_.size() - 1; i++)
-    {   
-        mav_interface->setPositionYaw(current_path_.points_[i] , 0);
-        setpoint_loop_rate.sleep();
-    }
+    // ros::Rate setpoint_loop_rate(10);
+    // for(std::size_t i = 0; i < current_path_.points_.size() - 1; i++)
+    // {   
+    //     mav_interface->setPositionYaw(current_path_.points_[i] , 0);
+    //     setpoint_loop_rate.sleep();
+    // }
 }
 
 
@@ -310,7 +351,7 @@ Path SwarmCommander::trajectoryPlanning(const Path& initial_path, ceres::Solver:
         ROS_INFO_STREAM(kStreamPrefix <<"Residuals: ");
         for (const auto& r : residuals)
         {
-        ROS_INFO_STREAM(r);
+            ROS_INFO_STREAM(r);
         }
     
         // ROS_INFO_STREAM(kStreamPrefix << "Gradients: ");
@@ -387,35 +428,53 @@ Path SwarmCommander::resamplePath(const Path& initial_path, const double max_pat
 
 
 Path SwarmCommander::modelPredictivePlanning(const Path& initial_path)
-{
-    SystemConstants sys_constants;
+{ 
     Path optimized_path = initial_path;
+    Eigen::Vector3d setting_point;
 
-    for (int i = 0; i < optimized_path.points_.size() - N; i++)
-    {
-        typedef CPPAD_TESTVECTOR(double) Dvector; // CppAD::AD<double>
+    //
+    size_t N = 6;
+    double dt = 0.025;
+    const size_t x_start = 0;
+    const size_t y_start = x_start + N;
+    const size_t z_start = y_start + N;
+    const size_t x_dot_start = z_start + N;
+    const size_t y_dot_start = x_dot_start + N;
+    const size_t z_dot_start = y_dot_start + N;
+    const size_t roll_start = z_dot_start + N;
+    const size_t pitch_start = roll_start + N;
+    const size_t roll_command_start = pitch_start + N;
+    const size_t pitch_command_start = roll_command_start + N - 1;
+    const size_t thrust_command_start = pitch_command_start + N - 1;
+    // 
 
-        const Eigen::Vector3d p1 = optimized_path.points_[i];
-        const Eigen::Vector3d p2 = optimized_path.points_[i + 1];
+    
+    const size_t n_vars = N * 8 + (N - 1) * 3; // number of independent variables 8 states and 3 inputs (domain dimension for f and g)
+    const size_t n_constraints = N * 8; // Number of constraints
+    SystemConstants sys_constants;
 
-        // updateCopterPosition doooooooooooooooooooooooooooooo
-        double x_init = current_copter_position_.x();
-        double y_init = current_copter_position_.y();
-        double z_init = current_copter_position_.z();
-        double x_dot_init = current_copter_velocity_.x();
-        double y_dot_init = current_copter_velocity_.y();
-        double z_dot_init = current_copter_velocity_.z();
-        double roll_init = current_copter_euler_orientation_.x();
-        double pitch_init = current_copter_euler_orientation_.y();
-        double yaw_init = current_copter_euler_orientation_.z();
+    // options
+    std::string options;
+    options += "Integer print_level  0\n";
+    options += "Sparse  true        forward\n";
+    options += "Sparse  true        reverse\n";
+    // options += "Numeric max_cpu_time          0.5\n";
+    // options += "Integer max_iter     10\n"; // // maximum number of iterations
+    // options += "Numeric tol          1e-6\n";
+    // options += "String  derivative_test            second-order\n";
+    // options += "Numeric point_perturbation_radius  0.\n";
+    
+    ros::WallTime start_time = ros::WallTime::now();
+    for (int i_ = 0; i_ < initial_path.points_.size() - 1 && updateCopterPosition() && ros::ok(); i_++)
+    {  
+        typedef CPPAD_TESTVECTOR(double) Dvector;
 
-        // number of independent variables 8 states and 3 inputs
-        size_t n_vars = N * 8 + (N - 1) * 3;
+        const Eigen::Vector3d p1 = initial_path.points_[i_];
+        const Eigen::Vector3d p2 = initial_path.points_[i_ + 1];
 
-        // Number of constraints
-        size_t n_constraints = N * 8;
+        // double yaw_init = current_copter_euler_orientation_.z(); // not needed
 
-        // Initial value of the independent variables.
+        // Initial value of the independent variables "vars".
         // Should be 0 except for the initial values.
         Dvector vars(n_vars);
         for (int i = 0; i < n_vars; ++i) 
@@ -423,102 +482,135 @@ Path SwarmCommander::modelPredictivePlanning(const Path& initial_path)
             vars[i] = 0.0;
         }
 
-        vars[x_start] = x_init;
-        vars[y_start] = y_init;
-        vars[z_start] = z_init;
-        vars[x_dot_start] = x_dot_init;
-        vars[y_dot_start] = y_dot_init;
-        vars[z_dot_start] = z_dot_init;
-        vars[roll_command_start] = roll_init;
-        vars[pitch_command_start] = pitch_init;
+        vars[x_start] = current_copter_position_.x();
+        vars[y_start] = current_copter_position_.y();
+        vars[z_start] = current_copter_position_.z();
+        vars[x_dot_start] = current_copter_velocity_.x();
+        vars[y_dot_start] = current_copter_velocity_.y();
+        vars[z_dot_start] = current_copter_velocity_.z();
+        vars[roll_start] = current_copter_euler_orientation_.x();
+        vars[pitch_start] = current_copter_euler_orientation_.y();
 
+        // Set all non-actuators upper and lowerlimits to the max negative and positive values.
         // Lower and upper limits for x
         Dvector vars_lowerbound(n_vars);
         Dvector vars_upperbound(n_vars);
-
-        // Set all non-actuators upper and lowerlimits
-        // to the max negative and positive values.
-        for (int i = 0; i < roll_command_start; ++i) 
+        for (int i = 0; i < roll_start; ++i) 
         {
             vars_lowerbound[i] = -1.0e19;
             vars_upperbound[i] = 1.0e19;
         }
 
-        for (int i = roll_command_start; i < thrust_command_start; ++i) 
+         for (int i = roll_start; i < thrust_command_start; ++i) 
         {
             vars_lowerbound[i] = - sys_constants.maxmin_angle;
             vars_upperbound[i] =   sys_constants.maxmin_angle;
         }
 
+        // control input constraints
         for (int i = thrust_command_start; i < n_vars; i++)
         {
-            vars_lowerbound[i] = sys_constants.min_thrust;
-            vars_upperbound[i] = - sys_constants.max_thrust;
+            vars_lowerbound[i] = - sys_constants.min_thrust;
+            vars_upperbound[i] =   sys_constants.max_thrust;
         }
 
-
+        // Set boundary conditions.
         // Lower and upper limits for constraints
-        // All of these should be 0 except the initial
-        // state indices.
         Dvector constraints_lowerbound(n_constraints);
         Dvector constraints_upperbound(n_constraints);
         for (int i = 0; i < n_constraints; ++i) 
         {
-            constraints_lowerbound[i] = 0;
-            constraints_upperbound[i] = 0;
+            // A motion manifold should be created 
+            constraints_lowerbound[i] = -1.0e19;
+            constraints_upperbound[i] = 1.0e19;
         }
-
-        constraints_lowerbound[x_start] = x_init;
-        constraints_lowerbound[y_start] = y_init;
-        constraints_lowerbound[z_start] = z_init;
-        constraints_lowerbound[x_dot_start] = x_dot_init;
-        constraints_lowerbound[y_dot_start] = y_dot_init;
-        constraints_lowerbound[z_dot_start] = z_dot_init;
-        constraints_lowerbound[roll_start] = roll_init;
-        constraints_lowerbound[pitch_start] = pitch_init;
-
-
-        constraints_upperbound[x_start] = x_init;
-        constraints_upperbound[y_start] = y_init;
-        constraints_upperbound[z_start] = z_init;
-        constraints_upperbound[x_dot_start] = x_dot_init;
-        constraints_upperbound[y_dot_start] = y_dot_init;
-        constraints_upperbound[z_dot_start] = z_dot_init;
-        constraints_upperbound[roll_start] = roll_init;
-        constraints_upperbound[pitch_start] = pitch_init;
+ 
+        constraints_lowerbound[x_start] = current_copter_position_.x();
+        constraints_lowerbound[y_start] = current_copter_position_.y();
+        constraints_lowerbound[z_start] = current_copter_position_.z();
+        constraints_lowerbound[x_dot_start] = current_copter_velocity_.x();
+        constraints_lowerbound[y_dot_start] = current_copter_velocity_.y();
+        constraints_lowerbound[z_dot_start] = current_copter_velocity_.z();
+        constraints_lowerbound[roll_start] = current_copter_euler_orientation_.x();
+        constraints_lowerbound[pitch_start] = current_copter_euler_orientation_.y();
 
 
-        // pass
-        FG_eval fg_eval(N, dt, p1,  p2);
+        constraints_upperbound[x_start] = current_copter_position_.x();
+        constraints_upperbound[y_start] = current_copter_position_.y();
+        constraints_upperbound[z_start] = current_copter_position_.z();
+        constraints_upperbound[x_dot_start] = current_copter_velocity_.x();
+        constraints_upperbound[y_dot_start] = current_copter_velocity_.y();
+        constraints_upperbound[z_dot_start] = current_copter_velocity_.z();
+        constraints_upperbound[roll_start] = current_copter_euler_orientation_.x();
+        constraints_upperbound[pitch_start] = current_copter_euler_orientation_.y();
 
-        // options
-        std::string options;
-        options += "Integer print_level  0\n";
-        options += "Sparse  true        forward\n";
-        options += "Sparse  true        reverse\n";
+        // object that computes objective and constraints
+        FG_eval fg_eval(p1,  p2);
 
         // place to return solution
         CppAD::ipopt::solve_result<Dvector> solution;
 
-        // solve the problem
-        CppAD::ipopt::solve<Dvector, FG_eval>(
-            options, vars, vars_lowerbound, vars_upperbound, constraints_lowerbound,
-            constraints_upperbound, fg_eval, solution);
-
+        try
+        {
+            // solve the problem
+            CppAD::ipopt::solve<Dvector, FG_eval>(
+                options, vars, vars_lowerbound, vars_upperbound, constraints_lowerbound,
+                    constraints_upperbound, fg_eval, solution);
+        }
+        catch(const std::exception& e)
+        {
+            std::cerr << e.what() << '\n';
+        }
+        
+        // bool memory_ok = CppAD::thread_alloc::free_all();
+        // std::string group = "swarm/Node";
+        // size_t      width = 20;
+        // CppAD::test_boolofvoid	Run(group, width);
+        // bool ok_sum = Run.summary(memory_ok);
+        // ROS_INFO_STREAM(kStreamPrefix <<"Summary (mem): "<< ok_sum);
+        // return static_cast<int>( ! ok_sum );
         //
         // Check some of the solution values
         //
         bool ok = true;
         ok &= solution.status == CppAD::ipopt::solve_result<Dvector>::success;
+        if(CppAD::ipopt::solve_result<Dvector>::success)
+            ROS_INFO_STREAM(kStreamPrefix <<"Solution found");
+        else
+            ROS_ERROR_STREAM(kStreamPrefix << "No solution found!!! Revise the Solver!");
 
         auto cost = solution.obj_value;
-        std::cout << "Cost " << cost << std::endl;
+        ROS_INFO_STREAM(kStreamPrefix <<"Cost: "<< cost);
+
+        ros::Rate setpoint_loop_rate(1/dt);
+        for(std::size_t i = 0; i < N; i++)
+        {   
+            // cout << "Solution (collective): " << std::endl;
+            // std::cout << solution.x[x_start + i] << " " << solution.x[y_start + i] << " " << solution.x[z_start + i] << std::endl;
+            setting_point << solution.x[x_start + i], solution.x[y_start + i], solution.x[z_start + i];
+            optimized_path.addPoint(setting_point);
+            mav_interface->setPositionYaw(setting_point, 0);
+        
+            setpoint_loop_rate.sleep();
+        }
+
+/*         if (!updateCopterPosition())
+            abortCurrentGoal();
+        const double dist_to_destination = (current_copter_position_ - destination_point_).norm();
+        ROS_INFO_STREAM(kStreamPrefix << "MPC: Distance to destination in meter = " << dist_to_destination);
+        if (dist_to_destination < config_.goal_vicinity)
+        {
+            ROS_INFO_STREAM(kStreamPrefix << "Modelpredictive Planner: Drone is located in goal vicinity; Initiating a planning process ain't needed");
+            finishCurrentGoal();
+            ROS_INFO_STREAM(kStreamPrefix << "==================================================================================");
+            return optimized_path;;
+        } */
+
+        // while((ros::WallTime::now() - start_time).toSec() < ros::WallDuration(dt).toSec())
+        //     ros::Duration(0.005).sleep();
     }
     return optimized_path;
 }
-
-
-
 
 // void SwarmCommander::optimize(const Path& initial_path)
 // {

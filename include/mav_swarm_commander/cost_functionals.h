@@ -140,17 +140,18 @@ public:
 class FG_eval 
 {   
     public:
-        const size_t N_ = 6;
-        const double dt_ = 0.05; // connect with ros
+        size_t N_;
+        double dt_; // connect with ros
         size_t x_start, y_start, z_start, x_dot_start, y_dot_start, z_dot_start, roll_start, pitch_start, roll_command_start, pitch_command_start, thrust_command_start;
-        const Eigen::Vector3d p1_ref_;
-        const Eigen::Vector3d p2_ref_;
+        Eigen::Vector3d p1_ref_;
+        Eigen::Vector3d p2_ref_;
 
         typedef CPPAD_TESTVECTOR(CppAD::AD<double>) ADvector;
         // Coefficients of the fitted polynomial.
-        FG_eval(const size_t N, const double dt, const Eigen::Vector3d p1_ref, const Eigen::Vector3d p2_ref):
-            N_(N), dt_(dt), p1_ref_(p1_ref), p2_ref_(p2_ref)    
+        FG_eval(const Eigen::Vector3d p1_ref, const Eigen::Vector3d p2_ref):p1_ref_(p1_ref), p2_ref_(p2_ref)    
         {
+            N_ = 6;
+            dt_ = 0.025;
             x_start = 0;
             y_start = x_start + N_;
             z_start = y_start + N_;
@@ -177,14 +178,21 @@ class FG_eval
             const double segment_length = (p2_ref_ - p1_ref_).norm();
             const double step_length = segment_length / N_;
 
-            // Reference State Cost
+/*             // Reference State Cost
             for (size_t t = 0; t < N_; ++t)
             {
                 const Eigen::Vector3d inspection_pos = p1_ref_ + vector_direction * step_length * (t); // should be (t) or (t + 1) ????
 
-                fg[0] += CppAD::pow(vars[x_start + t] - inspection_pos.x(), 2);
-                fg[0] += CppAD::pow(vars[y_start + t] - inspection_pos.y(), 2);
-                fg[0] += CppAD::pow(vars[z_start + t] - inspection_pos.z(), 2);
+                fg[0] += 100 * CppAD::pow(vars[x_start + t] - inspection_pos.x(), 2);
+                fg[0] += 100 * CppAD::pow(vars[y_start + t] - inspection_pos.y(), 2);
+                fg[0] += 100 * CppAD::pow(vars[z_start + t] - inspection_pos.z(), 2);
+            } */
+
+            for (size_t t = 0; t < N_; ++t)
+            {
+                fg[0] += 100 * CppAD::pow(vars[x_start + t] - p2_ref_.x(), 2);
+                fg[0] += 100 * CppAD::pow(vars[y_start + t] - p2_ref_.y(), 2);
+                fg[0] += 100 * CppAD::pow(vars[z_start + t] - p2_ref_.z(), 2);
             }
  
             // Minimize the use of actuators.
@@ -203,7 +211,6 @@ class FG_eval
                 fg[0] += CppAD::pow(vars[thrust_command_start + t + 1] - vars[thrust_command_start + t], 2);
             }
     
-             
             // Setup Constraints
             // NOTE: In this section, setup the model constraints.
 
@@ -253,8 +260,8 @@ class FG_eval
                 fg[1 + x_dot_start + t] = x_dot1 - (x_dot0 + (-0.01 * x_dot0 + 9.81 * roll0) * dt_);
                 fg[1 + y_dot_start + t] = y_dot1 - (y_dot0 + (-0.01 * y_dot0 - 9.81 * pitch0) * dt_);
                 fg[1 + z_dot_start + t] = z_dot1 - (z_dot0 + (thrust_command0) * dt_);
-                fg[1 + roll_start + t] = roll1 - (-roll0 + roll_command0);
-                fg[1 + pitch_start + t] = pitch1 - (-pitch0 + pitch_command0);               
+                fg[1 + roll_start + t] = roll1 - (-roll0 + 20.0 * roll_command0);
+                fg[1 + pitch_start + t] = pitch1 - (-pitch0 + 20.0 * pitch_command0);               
             }
         }
 };

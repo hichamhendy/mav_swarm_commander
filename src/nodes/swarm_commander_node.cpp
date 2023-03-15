@@ -7,8 +7,10 @@ int main(int argc, char** argv)
     ros::init(argc, argv, "mav_swarm_commander_node");
 
     ros::NodeHandle nh("");
-    ros::NodeHandle nh_private("~");
 
+    ros::NodeHandle nh_private("~");
+    // ros::CallbackQueue private_callback_queue;
+    // nh_private.setCallbackQueue(&private_callback_queue);
 
     // Thread 1
     ros::NodeHandle mav_interface("~");
@@ -26,8 +28,18 @@ int main(int argc, char** argv)
     mav_sdf.setCallbackQueue(&obstacles_esdf_callback_queue);
 
     SwarmCommander swarm_commander(nh, nh_private, mav_interface, mav_planner, mav_sdf);
+/* 
+    std::thread main_thread( [&private_callback_queue] () {
+        ros::Rate looping_rate(10);
+        while (ros::ok())
+        {
+            private_callback_queue.callAvailable();
+            looping_rate.sleep();
+        }
+        
+    });
 
-
+ */
     std::thread interface_thread( [&mav_interface_callback_queue] () {
         ros::Rate looping_rate(10);
         while (ros::ok())
