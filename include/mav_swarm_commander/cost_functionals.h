@@ -143,12 +143,12 @@ class FG_eval
         size_t N_;
         double dt_; // connect with ros
         size_t x_start, y_start, z_start, x_dot_start, y_dot_start, z_dot_start, roll_start, pitch_start, roll_command_start, pitch_command_start, thrust_command_start;
-        Eigen::Vector3d p1_ref_;
-        Eigen::Vector3d p2_ref_;
+        Eigen::VectorXd p1_ref_{8};
+        Eigen::VectorXd p2_ref_{8};
 
         typedef CPPAD_TESTVECTOR(CppAD::AD<double>) ADvector;
         // Coefficients of the fitted polynomial.
-        FG_eval(const Eigen::Vector3d p1_ref, const Eigen::Vector3d p2_ref):p1_ref_(p1_ref), p2_ref_(p2_ref)    
+        FG_eval(const Eigen::VectorXd p1_ref, const Eigen::VectorXd p2_ref):p1_ref_(p1_ref), p2_ref_(p2_ref)    
         {
             N_ = 6;
             dt_ = 0.025;
@@ -174,25 +174,19 @@ class FG_eval
             // The cost is stored is the first element of `fg`.
             // Any additions to the cost should be added to `fg[0]`.
             fg[0] = 0;
-            const Eigen::Vector3d vector_direction = (p2_ref_ - p1_ref_).normalized();
-            const double segment_length = (p2_ref_ - p1_ref_).norm();
-            const double step_length = segment_length / N_;
-
-/*             // Reference State Cost
-            for (size_t t = 0; t < N_; ++t)
-            {
-                const Eigen::Vector3d inspection_pos = p1_ref_ + vector_direction * step_length * (t); // should be (t) or (t + 1) ????
-
-                fg[0] += 100 * CppAD::pow(vars[x_start + t] - inspection_pos.x(), 2);
-                fg[0] += 100 * CppAD::pow(vars[y_start + t] - inspection_pos.y(), 2);
-                fg[0] += 100 * CppAD::pow(vars[z_start + t] - inspection_pos.z(), 2);
-            } */
 
             for (size_t t = 0; t < N_; ++t)
             {
-                fg[0] += 100 * CppAD::pow(vars[x_start + t] - p2_ref_.x(), 2);
-                fg[0] += 100 * CppAD::pow(vars[y_start + t] - p2_ref_.y(), 2);
-                fg[0] += 100 * CppAD::pow(vars[z_start + t] - p2_ref_.z(), 2);
+                fg[0] += 100 * CppAD::pow(vars[x_start + t] - p2_ref_[0], 2);
+                fg[0] += 100 * CppAD::pow(vars[y_start + t] - p2_ref_[1], 2);
+                fg[0] += 100 * CppAD::pow(vars[z_start + t] - p2_ref_[2], 2);
+            }
+
+            for (size_t t = 0; t < N_; ++t)
+            {
+                fg[0] += 100 * CppAD::pow(vars[x_dot_start + t] - p2_ref_[3], 2);
+                fg[0] += 100 * CppAD::pow(vars[y_dot_start + t] - p2_ref_[4], 2);
+                fg[0] += 100 * CppAD::pow(vars[z_dot_start + t] - p2_ref_[5], 2);
             }
  
             // Minimize the use of actuators.
@@ -265,95 +259,3 @@ class FG_eval
             }
         }
 };
-
-
-// class ocp
-// {
-
-//     public:
-//         /**
-//          * @brief Construct a new ocp object
-//          * 
-//          */
-//         ocp()N_(N), dt_(dt), p1_ref_(p1_ref), p2_ref_(p2_ref)  
-//         {
-
-//         }
-
-//         /**
-//          * @brief Destroy the ocp object
-//          * 
-//          */
-//         ~ocp()
-//         {
-            
-//         }
-
-//         double costFunction(const std::vector<double>& vars, std::vector<double>& grad,
-//                                         void* func_data)
-//         {
-
-//             double cost;
-//             const Eigen::Vector3d vector_direction = (p2_ref_ - p1_ref_).normalized();
-//             const double segment_length = (p2_ref_ - p1_ref_).norm();
-//             const double step_length = segment_length / N_;
-
-//             if (!grad.empty()) 
-//             {
-//                 // grad[0] = 0.0;
-//                 // grad[1] = 0.5 / sqrt(x[1]);
-//             }
-
-//             // Reference State Cost
-//             for (size_t t = 0; t < N_; ++t)
-//             {
-//                 const Eigen::Vector3d inspection_pos = p1_ref_ + vector_direction * step_length * (t); // should be (t) or (t + 1) ????
-
-//                 cost += pow(vars[x_start + t] - inspection_pos.x(), 2);
-//                 cost += pow(vars[y_start + t] - inspection_pos.y(), 2);
-//                 cost += pow(vars[z_start + t] - inspection_pos.z(), 2);
-//             }
-
-//                 // Minimize the use of actuators.
-//             for (size_t t = 0; t < N_ - 1; ++t) 
-//             {
-//                 cost += pow(vars[roll_command_start + t], 2);
-//                 cost += pow(vars[pitch_command_start + t], 2);
-//                 cost += pow(vars[thrust_command_start + t], 2); /// 
-//             }
-
-//                 // Minimize the value gap between sequential actuations to avoid overexcertion which can't be anyway implemented by PX4.
-//             for (size_t t = 0; t < N_ - 2; ++t) 
-//             {
-//                 cost += pow(vars[roll_command_start + t + 1] - vars[roll_command_start + t], 2);
-//                 cost += pow(vars[pitch_command_start + t + 1] - vars[pitch_command_start + t], 2);
-//                 cost += pow(vars[thrust_command_start + t + 1] - vars[thrust_command_start + t], 2);
-//             }
-
-//             return cost;
-//         }
-
-
-//         double myconstraint(unsigned n, const double *x, double *grad, void *data)
-//         {
-            
-//         }
-
-//     private:
-//         private:
-//         const size_t N_ = 6;
-//         const double dt_ = 0.05; // connect with ros
-//         const size_t x_start = 0;
-//         const size_t y_start = x_start + N_;
-//         const size_t z_start = y_start + N_;
-//         const size_t x_dot_start = z_start + N_;
-//         const size_t y_dot_start = x_dot_start + N_;
-//         const size_t z_dot_start = y_dot_start + N_;
-//         const size_t roll_start =  z_dot_start + N_;
-//         const size_t pitch_start = roll_start + N_;
-//         const size_t roll_command_start = pitch_start + N_;
-//         const size_t pitch_command_start = roll_command_start + N_ - 1;
-//         const size_t thrust_command_start = pitch_command_start + N_ - 1;
-//         const Eigen::Vector3d p1_ref_;
-//         const Eigen::Vector3d p2_ref_;
-// };

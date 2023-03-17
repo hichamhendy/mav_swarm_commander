@@ -30,6 +30,7 @@ Eigen::Vector3d SwarmCommander::ToEulerAngles(const Eigen::Quaterniond q)
     return angles;
 }
 
+
 void SwarmCommander::publish(const Path& path, const Eigen::Quaterniond& quat_orientation_setpoint)
 {
     geometry_msgs::PoseStamped PoseStamped_position_setpoint;
@@ -44,6 +45,7 @@ void SwarmCommander::publish(const Path& path, const Eigen::Quaterniond& quat_or
     PoseStamped_position_setpoint.pose.orientation.w = quat_orientation_setpoint.w();
     offboard_mode_position_setpoint_marker_pub_.publish(PoseStamped_position_setpoint);
 }
+
 
 bool SwarmCommander::updateCopterPosition()
 {
@@ -89,35 +91,62 @@ double SwarmCommander::deg2rad(double deg)
 }
 
 
-Eigen::VectorXd SwarmCommander::polyFit(const Eigen::VectorXd &xvals, const Eigen::VectorXd &yvals, int order) 
+Eigen::VectorXd SwarmCommander::polyFit2D(const Eigen::VectorXd &xvals, const Eigen::VectorXd &yvals, int order) 
 {
     assert(xvals.size() == yvals.size());
     assert(order >= 1 && order <= xvals.size() - 1);
 
     Eigen::MatrixXd A(xvals.size(), order + 1);
 
-    for (int i = 0; i < xvals.size(); ++i) {
+    for (int i = 0; i < xvals.size(); ++i) 
         A(i, 0) = 1.0;
-    }
 
-    for (int j = 0; j < xvals.size(); ++j) {
-        for (int i = 0; i < order; ++i) {
-        A(j, i + 1) = A(j, i) * xvals(j);
-        }
-    }
+    for (int j = 0; j < xvals.size(); ++j)
+        for (int i = 0; i < order; ++i)
+            A(j, i + 1) = A(j, i) * xvals(j);
+        
 
     auto Q = A.householderQr();
     auto result = Q.solve(yvals);
 
-  return result;
+    return result;
 }
 
 
-double SwarmCommander::polyEval(const Eigen::VectorXd &coeffs, double x) 
+double SwarmCommander::polyEval2D(const Eigen::VectorXd &coeffs, double x) 
 {
     double result = 0.0;
     for (int i = 0; i < coeffs.size(); ++i) {
         result += coeffs[i] * pow(x, i);
     }
     return result;
+}
+
+
+Eigen::MatrixXf SwarmCommander::differentiate(int k, double t) const
+{
+	// if ever a generalization would be needed, add n to the argument list or overload the function
+	Eigen::ArrayXf T = Eigen::ArrayXf::Constant(8, 1, 1); 	// 1 as initialization
+	
+    // generates 'size' equally spaced values in the closed interval [low,high]-> 1 2 3 4 5 6 7 8 For integer scalar types, 
+    // an even spacing is possible if and only if the length of the range, i.e., high-low is a scalar multiple of size-1,
+	Eigen::ArrayXf D = Eigen::ArrayXf::LinSpaced(8, 0, 7);	
+	
+	for (int j = 0; j < k; ++j) // if k = 0, no differentiation for-loop won't be entered
+	{
+		for (int i = 0; i < 8; ++i)
+		{
+			T(i) *= D(i); // coefficient
+			if(D(i) > 0) // if I'm gonna loop again that means nothing but higher order of differentiation; hence, reduce the order by one
+				D(i) -= 1;			
+		}
+	}
+
+	// Having the array of  1 2 3 4 5 6 7 8 represents a container to loop on to differentiate since by differentiating we take down the power and multiply with the base
+	// if k = 0 I get p(ts) =  ts + ts^2 + ts^3  +  ts^4 + ts^5 + ts^6 + ts^7, The higher the order gets, the lower the power gets. The code shunk just before controls the oder I will raise to.
+	for (int i = 0; i < 8; ++i)
+	{
+		T(i) *= std::pow(t, D(i));
+	}
+	return T.matrix().transpose();
 }

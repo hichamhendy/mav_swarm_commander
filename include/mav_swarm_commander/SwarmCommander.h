@@ -4,6 +4,7 @@
 
 #include <manager_msgs/FlyToAction.h>
 #include <manager_msgs/OffboardPathSetpoint.h>
+#include <manager_msgs/OffboardTrajectorySetpoint.h>
 #include <dynamic_reconfigure/server.h>
 #include <mav_swarm_commander/SwarmCommanderConfig.h>
 #include <mavros_msgs/HomePosition.h>
@@ -25,6 +26,7 @@
 #include <cmath>
 
 #include "mav_swarm_commander/path.h"
+#include "mav_swarm_commander/trajectory.h"
 #include "mav_swarm_commander/cost_functionals.h"
 #include "mav_swarm_commander/state_space_ODE.h"
 
@@ -113,6 +115,7 @@ class SwarmCommander
         ros::Publisher final_path_pub_;
         ros::Publisher sampled_path_pub_;
         ros::Publisher path_setpoint_pub_;
+        ros::Publisher minsnaptrajectory_pub_;
         ros::Publisher offboard_mode_position_setpoint_marker_pub_;
         ros::ServiceClient topological_planning_service_client_; // the client is temporary till I integrate the planner
         ros::Subscriber velocity_sub_;
@@ -122,6 +125,7 @@ class SwarmCommander
         std_msgs::ColorRGBA color_initial_path_;
         std_msgs::ColorRGBA color_current_path_;
         std_msgs::ColorRGBA color_final_path_;
+        std_msgs::ColorRGBA color_trajectory_;
 
         // Reconfigure
         dynamic_reconfigure::Server<mav_swarm_commander::SwarmCommanderConfig> dynamic_reconfigure_server_;
@@ -135,6 +139,8 @@ class SwarmCommander
         Path initial_path_;
         Path current_path_;
         Path current_safe_path_;
+        Trajectory min_snap_trajectory_;
+        Trajectory current_trajectory_;
         mutable std::mutex current_safe_path_mutex_;
         std::string px4_flight_mode_;
         boost::optional<Eigen::Vector3d> loiter_position_;
@@ -148,20 +154,19 @@ class SwarmCommander
         
         ros::Timer publish_position_setpoint_timer_; // Setpoint
 
-        //
-        size_t N = 6;
-        size_t x_start = 0;
-        size_t y_start = x_start + N;
-        size_t psi_start = y_start + N;
-        size_t v_start = psi_start + N;
-        size_t cte_start = v_start + N;
-        size_t epsi_start = cte_start + N;
-        size_t delta_start = epsi_start + N;
-        size_t a_start = delta_start + N - 1;
-        double dt = 0.05;
-        const double Lf = 2.67;
-        double ref_v = 40;
-        //
+        bool post_init;
+        Eigen::MatrixXf prev_states;
+        
+        size_t N;
+        double dt;
+        size_t x_start, y_start, z_start, x_dot_start, y_dot_start, z_dot_start, roll_start, pitch_start, roll_command_start, pitch_command_start, thrust_command_start;
+
+        size_t n_vars; // number of independent variables 8 states and 3 inputs (domain dimension for f and g)
+        size_t n_constraints; // Number of constraints
+        SystemConstants sys_constants;
+
+        // options
+        std::string options;
 
         /**
          * @brief 
@@ -294,7 +299,44 @@ class SwarmCommander
          * when one variable starts and another ends to make our lifes easier.
          * @note https://coin-or.github.io/CppAD/doc/ipopt_solve_get_started.cpp.htm
         */
-        Path modelPredictivePlanning(const Path& initial_path);
+        Trajectory modelPredictivePlanning(const Trajectory& initial_trajectory);
+
+        /**
+         * @brief The target is to generate a natural trajectory from the perspective of the quadrotor. revise: https://ieeexplore.ieee.org/document/5980409
+         * @note Mellinger and Kumar proved that there are conditions to fly a quadrotor along a trajec-
+            tory, given a sequence of waypoints in 3D Space; otherwise, a good tracking performance can not
+            be implemented [MK11]. The waypoints represent a piecewise-linear path. Therefore, the intuitive
+            idea is to interpolate between the waypoints using straight lines and constant velocity to form a
+            trajectory. Yet, the trajectory, in this case, will be inefficient because of the infinite curvature
+            at the trajectory’s keyframes/waypoints [MK11]. The authors have demonstrated that polynomial
+            trajectories provide smooth transint n, via discontinuous inputs. System inputs (Ft, Mx, My, Mz)
+            and states will be reconstructed by PX4 through feedforwarding the trajectory in output space exploiting the
+            differential flatness property. The polynomials of the trajectory need then to be built in the way for
+            which the fourth-derivative of position, also called snap, is minimized and consequently the change
+            in inputs, as well.
+         * 	For the first polynomial, there are four conditions at the initial state (position at the start and three
+            derivatives, set to null) and seven at the end (one position at the end and six derivatives). For all the
+            intermediary polynomials, there are the same seven conditions at the beginning (one position and
+            six derivatives) and similarly seven conditions at the end so that the polynomials can be matched
+            with each other. For the last polynomial, the boundary conditions are similar to the first polynomial
+            except that there are seven conditions at the beginning of the polynomial and four at the end of
+            the polynomial. 
+            Every polynomial will be parametrized by the dimensionless time which starts at -1 (try 0) and ends at 1.
+            That should prevent the element values of the polynomial from increasing due to the increase in the
+            time since some elements of the polynomial are raised to the seventh order.
+         * 
+         * @param msg taken from the planner 
+         */
+        Eigen::MatrixXf minSnapTraj(const Path& initial_path) const;
+
+        /**
+         * @brief function to differentiate a 7th order polynomial
+         * @param k is differentation order, t is the time instant (to be made dimentionless)
+         * @note The function differentiates a 7th order polynomial. Based on the the k, we want to
+         * to reach a polynmial gets calcuklated. Polynmials are function of time which also will be base 
+         * of the power will should raise to. 
+         */
+        Eigen::MatrixXf differentiate( int k, double t) const;
 
         /**
          * @brief 
@@ -312,7 +354,7 @@ class SwarmCommander
          * @brief 
          * 
          */
-        Eigen::VectorXd polyFit(const Eigen::VectorXd &xvals, const Eigen::VectorXd &yvals, int order);
+        Eigen::VectorXd polyFit2D(const Eigen::VectorXd &xvals, const Eigen::VectorXd &yvals, int order);
 
         /**
          * @brief 
@@ -321,7 +363,7 @@ class SwarmCommander
          * @param x 
          * @return double 
          */
-        double polyEval(const Eigen::VectorXd &coeffs, double x);
+        double polyEval2D(const Eigen::VectorXd &coeffs, double x);
 
         /**
          * @brief 

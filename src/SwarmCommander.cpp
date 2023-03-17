@@ -16,7 +16,7 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
     initial_path_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/initial_path", 1);
     current_path_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/current_path", 1);
     final_path_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/final_path", 1);
-    path_setpoint_pub_ = nh_private_.advertise<manager_msgs::OffboardPathSetpoint>("/path_setpoint", 1);
+    minsnaptrajectory_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/minimumsnap_traj", 1);
     offboard_mode_position_setpoint_marker_pub_ = nh_private_.advertise<geometry_msgs::PoseStamped>("/offboard_position_setpoint", 1);
     velocity_sub_ = nh_private_.subscribe<geometry_msgs::TwistStamped>("/mavros/local_position/velocity_local", 1, boost::bind(&SwarmCommander::velocityCallback, this, _1));
 
@@ -35,6 +35,14 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
     color_final_path_.b = 0.1;
     color_final_path_.a = 1.0;
 
+    color_trajectory_.r = 1.0;
+    color_trajectory_.g = 0.5;
+    color_trajectory_.b = 0.1;
+    color_trajectory_.a = 1.0;
+
+    post_init = false;
+    prev_states = Eigen::MatrixXf::Zero(4,3);
+
     flyto_server_.registerGoalCallback(boost::bind(&SwarmCommander::goalCallback, this));
     flyto_server_.registerPreemptCallback(boost::bind(&SwarmCommander::preemptCallback, this));
     flyto_server_.start(); // regarding auto_start in the construction, the boolean value that tells the ActionServer wheteher or not to start publishing as soon as it comes up. THIS SHOULD ALWAYS BE SET TO FALSE TO AVOID RACE CONDITIONS and start() should be called after construction of the server.
@@ -42,6 +50,32 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
     dynamic_reconfigure_server_.setCallback(boost::bind(&SwarmCommander::reconfigure, this, _1, _2));
 
     // trajectory_planning_timer_ = nh_private_.createTimer(ros::Duration(1.0), boost::bind(&SwarmCommander::globalPlanner, this)); // in case the planner applied a horizon shift
+
+    N = 6;
+    dt = 0.025;
+    x_start = 0;
+    y_start = x_start + N;
+    z_start = y_start + N;
+    x_dot_start = z_start + N;
+    y_dot_start = x_dot_start + N;
+    z_dot_start = y_dot_start + N;
+    roll_start = z_dot_start + N;
+    pitch_start = roll_start + N;
+    roll_command_start = pitch_start + N;
+    pitch_command_start = roll_command_start + N - 1;
+    thrust_command_start = pitch_command_start + N - 1;
+
+    options += "Integer print_level  0\n";
+    options += "Sparse  true        forward\n";
+    options += "Sparse  true        reverse\n";
+    // options += "Numeric max_cpu_time          0.5\n";
+    // options += "Integer max_iter     10\n"; // // maximum number of iterations
+    // options += "Numeric tol          1e-6\n";
+    // options += "String  derivative_test            second-order\n";
+    // options += "Numeric point_perturbation_radius  0.\n";
+
+    n_vars = N * 8 + (N - 1) * 3;  
+    n_constraints = N * 8;  
 
     run_thread = std::thread(&SwarmCommander::run, this);
     // goal_reached_thread = std::thread(&SwarmCommander::goalReached, this);
@@ -176,6 +210,8 @@ void SwarmCommander::goalCallback()
     initial_path_.points_.clear();
     current_path_.points_.clear();
     current_safe_path_.points_.clear();
+    min_snap_trajectory_.points_.clear();
+    current_trajectory_.points_.clear();
 
     globalPlanner(); // initate the trajectory builder based on the received goal
 }
@@ -188,6 +224,8 @@ void SwarmCommander::preemptCallback()
     initial_path_.points_.clear();
     current_path_.points_.clear();
     current_safe_path_.points_.clear();
+    min_snap_trajectory_.points_.clear();
+    current_trajectory_.points_.clear();
 
     if (updateCopterPosition())
     {
@@ -209,6 +247,8 @@ void SwarmCommander::finishCurrentGoal()
     initial_path_.points_.clear();
     current_path_.points_.clear();
     current_safe_path_.points_.clear();
+    min_snap_trajectory_.points_.clear();
+    current_trajectory_.points_.clear();
 
     initial_path_pub_.publish(Path().visualizationMarkerMsg(color_initial_path_));
     final_path_pub_.publish(Path().visualizationMarkerMsg(color_final_path_));
@@ -226,6 +266,8 @@ void SwarmCommander::abortCurrentGoal()
     initial_path_.points_.clear();
     current_path_.points_.clear();
     current_safe_path_.points_.clear();
+    min_snap_trajectory_.points_.clear();
+    current_trajectory_.points_.clear();
 
     initial_path_pub_.publish(Path().visualizationMarkerMsg(color_initial_path_));
     final_path_pub_.publish(Path().visualizationMarkerMsg(color_final_path_));
@@ -263,42 +305,70 @@ void SwarmCommander::globalPlanner()
         return;
     }
 
+    // TODO: Abort Replanning somehow so that we can bring back the timer as an observer!?
+
+    if(updateCopterPosition())
+	{
+		prev_states(0,0) = current_copter_position_.x();
+		prev_states(0,1) = current_copter_position_.y();
+		prev_states(0,2) = current_copter_position_.z();
+ 
+        // Temporary solution
+        if (initial_path_.points_.empty())
+        {
+            initial_path_.addPoint(current_copter_position_);
+            initial_path_.addPoint(destination_point_);
+        }
+        initial_path_pub_.publish(initial_path_.visualizationMarkerMsg(color_initial_path_));
+
+        current_path_ = resamplePath(initial_path_);
+
+        size_t n = current_path_.points_.size() - 1;
+        Eigen::VectorXf time_instant = Eigen::VectorXf::Zero(n);
+        for (int i = 0; i < n; ++i)
+		    time_instant(i) = i * (2.0/n);
+        
+        Eigen::MatrixXf coefficients = minSnapTraj(current_path_);
+        for(size_t seg = 0; seg < n; ++seg)
+	    {
+            Eigen::MatrixXf time_stamped_position  = differentiate( 0, time_instant(seg)/2.0 ) * coefficients.block(8*seg, 0, 8, 3);
+		    Eigen::MatrixXf time_stamped_velocity  = differentiate( 1, time_instant(seg)/2.0 ) * coefficients.block(8*seg, 0, 8, 3);
+		    Eigen::MatrixXf time_stamped_acceleration  = differentiate( 2, time_instant(seg)/2.0 ) * coefficients.block(8*seg, 0, 8, 3);
+            Eigen::VectorXd point_holder {{time_stamped_position(0), time_stamped_position(1), time_stamped_position(2), 
+                                                time_stamped_velocity(0), time_stamped_velocity(1), time_stamped_velocity(2), 
+                                                    time_stamped_acceleration(0), time_stamped_acceleration(1), time_stamped_acceleration(2)}};
+            min_snap_trajectory_.addPoint(point_holder);
+        }
+
+        minsnaptrajectory_pub_.publish(min_snap_trajectory_.visualizationMarkerMsg(color_trajectory_));
+
+        // // Ceres Solution Non linear least square
+        // ceres::Solver::Summary ceres_solver_summary;
+        // current_path_ = trajectoryPlanning(current_path_, &ceres_solver_summary);
+        // ROS_DEBUG_STREAM("Solver Summary" << ceres_solver_summary.FullReport());
+
+        // Model predictive planning
+        current_trajectory_ = modelPredictivePlanning(min_snap_trajectory_);
 
 
-    // Temporary solution
-    if (initial_path_.points_.empty())
-    {
-      initial_path_.addPoint(current_copter_position_);
-      initial_path_.addPoint(destination_point_);
-    }
-    initial_path_pub_.publish(initial_path_.visualizationMarkerMsg(color_initial_path_));
+        ROS_DEBUG_STREAM("optimized path:");
+        for (const auto& p : current_path_.points_)
+        {
+            ROS_DEBUG_STREAM(p.transpose());
+        }
 
-    current_path_ = resamplePath(initial_path_);
+        current_path_pub_.publish(current_path_.visualizationMarkerMsg(color_current_path_));
 
-
-    // // Ceres Solution Non linear least square
-    // ceres::Solver::Summary ceres_solver_summary;
-    // current_path_ = trajectoryPlanning(current_path_, &ceres_solver_summary);
-    // ROS_DEBUG_STREAM("Solver Summary" << ceres_solver_summary.FullReport());
-
-    // Model predictive planning
-    current_path_ = modelPredictivePlanning(current_path_);
-
-
-    ROS_DEBUG_STREAM("optimized path:");
-    for (const auto& p : current_path_.points_)
-    {
-        ROS_DEBUG_STREAM(p.transpose());
-    }
-
-    current_path_pub_.publish(current_path_.visualizationMarkerMsg(color_current_path_));
-
-    // ros::Rate setpoint_loop_rate(10);
-    // for(std::size_t i = 0; i < current_path_.points_.size() - 1; i++)
-    // {   
-    //     mav_interface->setPositionYaw(current_path_.points_[i] , 0);
-    //     setpoint_loop_rate.sleep();
-    // }
+        // ros::Rate setpoint_loop_rate(10);
+        // for(std::size_t i = 0; i < current_path_.points_.size() - 1; i++)
+        // {   
+        //     mav_interface->setPositionYaw(current_path_.points_[i] , 0);
+        //     setpoint_loop_rate.sleep();
+        // }
+        
+	}
+	else
+		ROS_ERROR_STREAM(kStreamPrefix << "Global Planner: MAV Position couldn't be updated");
 }
 
 
@@ -418,59 +488,27 @@ Path SwarmCommander::resamplePath(const Path& initial_path, const double max_pat
         const auto p2 = initial_path.points_[i + 1];
         while ((p2 - p1).norm() > max_path_length)
         {
-        p1 = p1 + (p2 - p1).normalized() * 0.5 * max_path_length;
-        resampled_path.addPoint(p1);
+            p1 = p1 + (p2 - p1).normalized() * 0.5 * max_path_length;
+            resampled_path.addPoint(p1);
         }
-        resampled_path.addPoint(p2);
+            resampled_path.addPoint(p2);
     }
     return resampled_path;
 }
 
 
-Path SwarmCommander::modelPredictivePlanning(const Path& initial_path)
+Trajectory SwarmCommander::modelPredictivePlanning(const Trajectory& initial_trajectory)
 { 
-    Path optimized_path = initial_path;
+    Trajectory optimized_trajectory = initial_trajectory;
     Eigen::Vector3d setting_point;
 
-    //
-    size_t N = 6;
-    double dt = 0.025;
-    const size_t x_start = 0;
-    const size_t y_start = x_start + N;
-    const size_t z_start = y_start + N;
-    const size_t x_dot_start = z_start + N;
-    const size_t y_dot_start = x_dot_start + N;
-    const size_t z_dot_start = y_dot_start + N;
-    const size_t roll_start = z_dot_start + N;
-    const size_t pitch_start = roll_start + N;
-    const size_t roll_command_start = pitch_start + N;
-    const size_t pitch_command_start = roll_command_start + N - 1;
-    const size_t thrust_command_start = pitch_command_start + N - 1;
-    // 
-
-    
-    const size_t n_vars = N * 8 + (N - 1) * 3; // number of independent variables 8 states and 3 inputs (domain dimension for f and g)
-    const size_t n_constraints = N * 8; // Number of constraints
-    SystemConstants sys_constants;
-
-    // options
-    std::string options;
-    options += "Integer print_level  0\n";
-    options += "Sparse  true        forward\n";
-    options += "Sparse  true        reverse\n";
-    // options += "Numeric max_cpu_time          0.5\n";
-    // options += "Integer max_iter     10\n"; // // maximum number of iterations
-    // options += "Numeric tol          1e-6\n";
-    // options += "String  derivative_test            second-order\n";
-    // options += "Numeric point_perturbation_radius  0.\n";
-    
     ros::WallTime start_time = ros::WallTime::now();
-    for (int i_ = 0; i_ < initial_path.points_.size() - 1 && updateCopterPosition() && ros::ok(); i_++)
+    for (int i_ = 0; i_ < initial_trajectory.points_.size() - 1 && updateCopterPosition() && ros::ok(); i_++)
     {  
         typedef CPPAD_TESTVECTOR(double) Dvector;
 
-        const Eigen::Vector3d p1 = initial_path.points_[i_];
-        const Eigen::Vector3d p2 = initial_path.points_[i_ + 1];
+        const Eigen::VectorXd p1 = initial_trajectory.points_[i_];
+        const Eigen::VectorXd p2 = initial_trajectory.points_[i_ + 1];
 
         // double yaw_init = current_copter_euler_orientation_.z(); // not needed
 
@@ -588,7 +626,8 @@ Path SwarmCommander::modelPredictivePlanning(const Path& initial_path)
             // cout << "Solution (collective): " << std::endl;
             // std::cout << solution.x[x_start + i] << " " << solution.x[y_start + i] << " " << solution.x[z_start + i] << std::endl;
             setting_point << solution.x[x_start + i], solution.x[y_start + i], solution.x[z_start + i];
-            optimized_path.addPoint(setting_point);
+            // Eigen::VectorXd
+            // optimized_trajectory.addPoint(setting_point);
             mav_interface->setPositionYaw(setting_point, 0);
         
             setpoint_loop_rate.sleep();
@@ -609,45 +648,122 @@ Path SwarmCommander::modelPredictivePlanning(const Path& initial_path)
         // while((ros::WallTime::now() - start_time).toSec() < ros::WallDuration(dt).toSec())
         //     ros::Duration(0.005).sleep();
     }
-    return optimized_path;
+    return optimized_trajectory;
 }
 
-// void SwarmCommander::optimize(const Path& initial_path)
-// {
-//     Path optimized_control_points = initial_path;
-//     // bool optimize_time_ = cost_function_ & MINTIME; // time optimization ?? 
-//     // variable_num_ = optimize_time_ ? dim_ * 3 + 1 : dim_ * 3;
-
-//     ocp ocp_cost;
-//     nlopt::opt optimizer = nlopt::opt(nlopt::GN_ISRES, 3);
-//     optimizer.set_min_objective(ocp_cost.costFunction, this);
-//     optimizer.set_maxeval(config_.max_num_iterations);
-//     optimizer.set_maxtime(config_.max_iteration_time);
-//     optimizer.set_xtol_rel(1e-5);
 
 
-//     vector<double> q(3);
+Eigen::MatrixXf SwarmCommander::minSnapTraj(const Path& initial_path) const
+{
+	int no_waypoints = initial_path.points_.size() - 1; 
+	
+    // as known the system is to be solved is liner defined
+	Eigen::MatrixXf b = Eigen::MatrixXf::Zero(8 * no_waypoints, 3); // 8 to conclude x, xdot, xdouble_dot, xtriple_dot, xquadro_dot
+	Eigen::MatrixXf A = Eigen::MatrixXf::Zero(8 * no_waypoints, 8 * no_waypoints); // 8 to consider 7th order of polynomial. Square A matrix, should be solved by LU factorization with partial pivoting.
+	
+    Eigen::MatrixXf waypoints = Eigen::MatrixXf::Zero(no_waypoints + 1, 3); // m polynomials (m points)
 
+	for (int i = 0; i <= no_waypoints; ++i)
+	{
+		waypoints(i, 0) = initial_path.points_[i].x();
+		waypoints(i, 1) = initial_path.points_[i].y();
+		waypoints(i, 2) = initial_path.points_[i].z();
+	}
 
-//     try 
-//     {
-//         double final_cost;
-//         nlopt::result result = opt.optimize(q, final_cost);
-//     } 
-//     catch (std::exception& e) 
-//     {
-//         std::cout << e.what() << endl;
-//     }
+	/*
+	The piecewise polynomial functions of order 7 allows us to go to higher order
+	polynomials which can potentially allow us to satisfy different constraints on 
+	the states and inputs. The path can be generated by solving the linear equation 
+	for the parameters of the following matrix:
+		A = [1   ts   ts^2   ts^3       ts^4      ts^5        ts^6         ts^7;...
+			 0   1  2 * ts  3 * ts^2  4 * ts^3   5 * ts^4  6   * ts^5    7  *  ts^6;...
+			 0   0    2     6 * ts   12 * ts^2  20 * ts^3  30  * ts^4    42 *  ts^5;...
+			 0   0    0       6      24 * ts    60 * ts^2  120 * ts^3    210 * ts^4;...
+			 1   ts   ts^2   ts^3       ts^4      ts^5        ts^6         ts^7    ;...
+			 0   1  2 * ts  3 * ts^2  4 * ts^3   5 * ts^4  6   * ts^5    7  *  ts^6;...
+			 0   0    2     6 * ts   12 * ts^2  20 * ts^3  30  * ts^4    42 *  ts^5;...
+			 0   0    0       6      24 * ts    60 * ts^2  120 * ts^3    210 * ts^4;...
+			];
+	*/
 
-//     // Eigen::Vector3d bmin, bmax;
+	// The right hand side b will only contain the initial, final conditions (x, ẋ, ẍ, x.... ) and
+	// intermediate points x j j = [1, m] and the other elements are set to null.
+	for(int i = 0; i < no_waypoints; i++)
+	{
+        // full up b so , it has the position from the waypoints in PAIRS
+		b(i, 0) = waypoints(i, 0);
+		b(i, 1) = waypoints(i, 1);
+		b(i, 2) = waypoints(i, 2);
 
-// }
+		b(i + no_waypoints, 0) = waypoints(i + 1, 0); // no_waypoints will be the displacment in the matrix
+		b(i + no_waypoints, 1) = waypoints(i + 1, 1);
+		b(i + no_waypoints, 2) = waypoints(i + 1, 2);
+	}
 
-// double SwarmCommander::costFunction(const std::vector<double>& x, std::vector<double>& grad,
-//                                       void* func_data)
-// {
+	// Thumb rule by filling out matrix block (matrix.block(i,j,p,q)) is -> Block of size (p,q), starting at (i,j) = A.block<1,8>(row, 8 * i);
 
-//     double cost;
+	size_t row = 0;
 
-//     return cost;
-// }
+	// Firstly, Filling out positions with displacment of 8 since position has complete polynmial
+	// Position constraints at t = 0, k should be 0 since the polynmoial without differentiation is needed for position polynmial
+	for(int i = 0; i < no_waypoints; i++)
+	{
+		A.block(row, 8*i, 1, 8) = differentiate(0, 0); 
+		row++;
+	}
+
+	// Position constraints at t = 1
+	for(int i = 0; i < no_waypoints; i++)
+	{
+		A.block(row, 8*i, 1, 8) = differentiate(0, 1);
+		row++;
+	}
+
+	// Secondly, Filling out velocities, accelerations, jerk; yet, raise the order of differentiation ()
+	// The idea to connect the velocity, acceleration, and jerk curves therefore looping till 3 and start the differention form 1 to 3 to get as of velocity
+	// Velocity, acceleration, and jerk constraints at t = 0 
+	for (int i = 0; i < 3; i++) // or (size_t i = 1; i = < 3; i++) and remove i + 1 for i
+	{
+		A.block(row, 0, 1, 8) = differentiate(i + 1, 0);
+		// This a suitable place to place the intialized velocities and overwrite the initial position
+		if(post_init) 
+		{
+			// remeber prev_states are 4 (position, velocity, acceleration, and jerk) x 3 (x, y, and z)
+			b.block(0, 0, 1, 3) = prev_states.block(0, 0, 1, 3);  // overwritten
+			b.block(row, 0, 1, 3) = prev_states.block(1 + i, 0, 1, 3); // filled out with zeros since the aussumption is the drone starts and coms to still by executing a trajectory
+		}
+		row++;
+	}
+	// post_init = false;
+
+	// The same i.e  Velocity, acceleration, and jerk constraints yet at t = 1 for last point
+	for (int i = 0; i < 3; i++)
+	{
+		A.block(row, 8*(no_waypoints -1), 1, 8) = differentiate(i + 1, 1);
+		row++;
+	}
+
+	// Now, we connect the segments such that continuity can be gurannteed.Make every two polynomials differentiable along the boundary in the way that f i (t) = f i+1 (t),
+	// fi_dot(t) = fi+1_dot(t), fi+1_ddot(t) = fi+1_ddot(t), .... As mentioned before, the derivatives(n) (n)
+	// won’t be set, i.e.  fi(t) − fi+1 (t) = 0 where n = [1, 6].
+	// Continuity constraints at intermediate points
+	for (int i = 0; i < no_waypoints - 1; i++)
+	{
+		for (int k = 0; k < 6; k++)
+		{
+			A.block(row, 8*i ,1, 8) = differentiate( k + 1, 1);
+			A.block(row, 8*i + 8, 1, 8) = -differentiate( k + 1, 0);
+			row++;
+		}
+	}
+	// In that way, a linear system A x = B has been formed and can be solved for its parameters
+
+	// The linear system Ac = B using one of these methods:
+	// When A is square, a linear system can be soved by LU factorization with partial pivoting.
+	// or QR factorization with column pivoting.
+	Eigen::MatrixXf coefficients = A.colPivHouseholderQr().solve(b);
+	// Eigen::MatrixXf coefficients = A.partialPivLu().solve(b);
+	// Eigen::MatrixXf coefficients = A.ldlt().solve(b);
+
+    return coefficients;
+}

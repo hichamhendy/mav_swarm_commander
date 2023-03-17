@@ -32,7 +32,6 @@ find_package(
 
 ## System dependencies are found with CMake's conventions
 find_package(Ceres REQUIRED)
-# find_package(ifopt)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
 
@@ -72,6 +71,7 @@ add_library(${PROJECT_NAME}
         src/SwarmCommander.cpp
         src/line_segment.cpp
         src/path.cpp
+        src/trajectory.cpp
         src/SwarmCommanderUtility.cpp
 )
 
