@@ -188,6 +188,13 @@ class FG_eval
                 fg[0] += 100 * CppAD::pow(vars[y_dot_start + t] - p2_ref_[4], 2);
                 fg[0] += 100 * CppAD::pow(vars[z_dot_start + t] - p2_ref_[5], 2);
             }
+
+            for (size_t t = 1; t < N_; ++t)
+            {
+                fg[0] += 100 * CppAD::pow( (vars[x_dot_start + t - 1] + dt_ * vars[x_dot_start + t]) - p2_ref_[6], 2);
+                fg[0] += 100 * CppAD::pow( (vars[y_dot_start + t - 1] + dt_ * vars[y_dot_start + t]) - p2_ref_[7], 2);
+                fg[0] += 100 * CppAD::pow( (vars[z_dot_start + t - 1] + dt_ * vars[z_dot_start + t]) - p2_ref_[8], 2);
+            }
  
             // Minimize the use of actuators.
             for (size_t t = 0; t < N_ - 1; ++t) 

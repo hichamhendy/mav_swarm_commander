@@ -13,12 +13,16 @@ SwarmCommander::SwarmCommander(const ros::NodeHandle& nh, const ros::NodeHandle&
 
     mav_interface.reset(new nut::MavCommander(nh_interface_, true, false, true));
 
+    mav_planner->getInstance(nh_waypoint_planning_);
+
     initial_path_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/initial_path", 1);
     current_path_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/current_path", 1);
     final_path_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/final_path", 1);
     minsnaptrajectory_pub_ = nh_private_.advertise<visualization_msgs::MarkerArray>("/minimumsnap_traj", 1);
     offboard_mode_position_setpoint_marker_pub_ = nh_private_.advertise<geometry_msgs::PoseStamped>("/offboard_position_setpoint", 1);
     velocity_sub_ = nh_private_.subscribe<geometry_msgs::TwistStamped>("/mavros/local_position/velocity_local", 1, boost::bind(&SwarmCommander::velocityCallback, this, _1));
+
+    rrt_planning_service_client_ = nh_waypoint_planning_.serviceClient<manager_msgs::CommandTarget>("/goal_setting");
 
     color_initial_path_.r = 1.0;
     color_initial_path_.g = 0.5;
@@ -312,16 +316,39 @@ void SwarmCommander::globalPlanner()
 		prev_states(0,0) = current_copter_position_.x();
 		prev_states(0,1) = current_copter_position_.y();
 		prev_states(0,2) = current_copter_position_.z();
- 
-        // Temporary solution
-        if (initial_path_.points_.empty())
-        {
-            initial_path_.addPoint(current_copter_position_);
-            initial_path_.addPoint(destination_point_);
-        }
-        initial_path_pub_.publish(initial_path_.visualizationMarkerMsg(color_initial_path_));
 
-        current_path_ = resamplePath(initial_path_);
+        if (current_path_.points_.empty() || ((current_path_.points_.back() - destination_point_).norm() > 0.5))
+        {                
+            manager_msgs::CommandTarget target_srv;
+            target_srv.request.destination = tf2::toMsg(destination_point_);
+            
+            if(!config_.use_direct_flight_path && rrt_planning_service_client_.call(target_srv))
+            {
+                ROS_DEBUG_STREAM("using Direct Path to " << destination_point_.transpose());
+                // mav_planner->setGoal(destination_point_.x(), destination_point_.y(), destination_point_.z());
+
+                ros::Duration(2.5).sleep(); // solving time 
+                std::vector<std::tuple<double, double, double>> path;
+                path = mav_planner->getBSpline();
+                for (size_t i = 0; i < path.size(); ++i)
+                {
+                    Eigen::Vector3d to_be_added = Eigen::Vector3d(std::get<0>(path.at(i)), std::get<1>(path.at(i)), std::get<2>(path.at(i)));
+                    initial_path_.addPoint(to_be_added);
+                }
+                if(((current_copter_position_ - mav_planner->getGoal()).norm() / (double) mav_planner->getBSpline().size()) > 0.75) // every one meter at least one point
+                    current_path_ = resamplePath(initial_path_);
+                else
+                    current_path_ =initial_path_; 
+            }
+            else
+            {
+                initial_path_.addPoint(current_copter_position_);
+                initial_path_.addPoint(destination_point_);
+                current_path_ = resamplePath(initial_path_);  
+            }
+        }
+ 
+        initial_path_pub_.publish(initial_path_.visualizationMarkerMsg(color_initial_path_));
 
         size_t n = current_path_.points_.size() - 1;
         Eigen::VectorXf time_instant = Eigen::VectorXf::Zero(n);
@@ -500,7 +527,11 @@ Path SwarmCommander::resamplePath(const Path& initial_path, const double max_pat
 Trajectory SwarmCommander::modelPredictivePlanning(const Trajectory& initial_trajectory)
 { 
     Trajectory optimized_trajectory = initial_trajectory;
-    Eigen::Vector3d setting_point;
+    // Eigen::Vector3d setting_point;globalPlanner
+    Eigen::Vector3d pre_vel = Eigen::Vector3d(current_copter_velocity_.x(), current_copter_velocity_.y(), current_copter_velocity_.z());
+    Eigen::Vector3d setting_point_pos;
+    Eigen::Vector3d setting_point_vel;
+    Eigen::Vector3d setting_point_acc;
 
     ros::WallTime start_time = ros::WallTime::now();
     for (int i_ = 0; i_ < initial_trajectory.points_.size() - 1 && updateCopterPosition() && ros::ok(); i_++)
@@ -625,11 +656,16 @@ Trajectory SwarmCommander::modelPredictivePlanning(const Trajectory& initial_tra
         {   
             // cout << "Solution (collective): " << std::endl;
             // std::cout << solution.x[x_start + i] << " " << solution.x[y_start + i] << " " << solution.x[z_start + i] << std::endl;
-            setting_point << solution.x[x_start + i], solution.x[y_start + i], solution.x[z_start + i];
+            setting_point_pos << solution.x[x_start + i], solution.x[y_start + i], solution.x[z_start + i];
+            setting_point_vel << solution.x[x_dot_start + i], solution.x[y_dot_start + i], solution.x[z_dot_start + i];
+            setting_point_acc << pre_vel.x() + dt * solution.x[x_dot_start + i], pre_vel.y() + dt *solution.x[y_dot_start + i], pre_vel.z() + dt * solution.x[z_dot_start + i];
+
             // Eigen::VectorXd
             // optimized_trajectory.addPoint(setting_point);
-            mav_interface->setPositionYaw(setting_point, 0);
-        
+            // mav_interface->setPositionYaw(setting_point, 0);
+            // mav_interface->setVelocityYaw
+            mav_interface->setPositionVelocityAccelerationYaw(setting_point_pos, setting_point_vel, setting_point_acc, 0);
+            pre_vel << solution.x[x_dot_start + i], solution.x[y_dot_start + i], solution.x[z_dot_start + i];
             setpoint_loop_rate.sleep();
         }
 

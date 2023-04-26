@@ -10,6 +10,7 @@
 #include <mavros_msgs/HomePosition.h>
 #include <ros/ros.h>
 #include <tf2_ros/transform_listener.h>
+#include <tf2_eigen/tf2_eigen.h>
 
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/TwistStamped.h>
@@ -33,6 +34,7 @@
 
 #include "esdf_map/signed_distance_field.h"
 #include <mav_commander/mav_commander.h>
+#include <mav_planner/path_planner.h>
 
 #include <future> // to name the type of the mutex used
 
@@ -73,6 +75,8 @@ class SwarmCommander
 
         VoxelGridMap::Ptr sdf_map_;
         nut::MavCommander::Ptr mav_interface;
+
+        nut::Planner* mav_planner;
 
         // The timer triggering the main trajectory planning loop
         ros::Timer trajectory_planning_timer_;
@@ -120,6 +124,7 @@ class SwarmCommander
         ros::ServiceClient topological_planning_service_client_; // the client is temporary till I integrate the planner
         ros::Subscriber velocity_sub_;
         ros::Subscriber goal_sub_;
+        ros::ServiceClient rrt_planning_service_client_;
 
         // Visualization Parameters
         std_msgs::ColorRGBA color_initial_path_;

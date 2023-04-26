@@ -25,6 +25,7 @@ find_package(
         tf2_ros
         esdf_map
         mav_commander
+        mav_planner
         std_msgs
         libmavconn
         nlopt
@@ -34,7 +35,7 @@ find_package(
 find_package(Ceres REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED COMPONENTS system)
-
+find_package(fcl REQUIRED)
 
 generate_dynamic_reconfigure_options(
         cfg/swarm_commander.cfg
@@ -58,12 +59,14 @@ include_directories(
         SYSTEM
         ${catkin_INCLUDE_DIRS}
         ${CERES_INCLUDE_DIRS}
+        ${LIBFCL_INCLUDE_DIRS}
 )
 
 #is used to supply a list of libraries (object archives) to the linker. 
 link_libraries(
         ${catkin_LIBRARIES}
         ${CERES_LIBRARIES}
+        ${fcl_LIBRARY_DIRS}
   )
 
 ## Declare a C++ library  is similar to add_executable, except it adds a target for a library
@@ -87,7 +90,9 @@ target_link_libraries(${PROJECT_NAME}_node
         ${catkin_LIBRARIES}
         ${PROJECT_NAME} 
         ipopt python2.7
-        # ifopt::ifopt_ipopt
+        ${LIBFCL_LIBRARIES}
+        ${fcl_LIBRARIES}
+        fcl
         )
 add_dependencies(${PROJECT_NAME}_node
         ${catkin_EXPORTED_TARGETS}
